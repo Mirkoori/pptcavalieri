@@ -216,6 +216,17 @@ function transformSlide(xml, person, o, slideW, slideH) {
   const nameSize = (box) => o.fit ? fitSize(person.name, o.font, o.size, o.bold, o.italic, box) : o.size;
   const roleSize = (box) => o.fit && person.role ? fitSize(person.role, o.font, roleOpts.size, false, o.italic, box) : roleOpts.size;
 
+  if (o.stripText) {
+    const keepTitle = !o.forceNew;
+    for (const sp of Array.from(doc.getElementsByTagNameNS(NS_P, 'sp'))) {
+      const txt = Array.from(sp.getElementsByTagNameNS(NS_A, 't')).map(t => t.textContent).join('').trim();
+      if (!txt || PH_TEST.test(txt)) continue;
+      const ph = sp.getElementsByTagNameNS(NS_P, 'ph')[0];
+      if (keepTitle && ph && /^(title|ctrTitle)$/.test(ph.getAttribute('type') || '')) continue;
+      sp.parentNode.removeChild(sp);
+    }
+  }
+
   if (!o.forceNew) {
     // 1) segnaposto {{NOME}} / {{RUOLO}}
     for (const p of Array.from(doc.getElementsByTagNameNS(NS_A, 'p'))) {
@@ -420,7 +431,7 @@ function readOpts() {
     keepStyle: $('keepStyle').checked, forceNew: $('forceNew').checked,
     px: n('px', 6), py: n('py', 68), pw: n('pw', 88), ph: n('ph', 24),
     trType: $('trType').value, trDir: $('trDir').value, trSpd: $('trSpd').value, advSec: n('advSec', 0),
-    keepOthers: $('keepOthers').checked, caseMode: $('caseMode').value
+    keepOthers: $('keepOthers').checked, stripText: $('stripText').checked, caseMode: $('caseMode').value
   };
 }
 
@@ -482,7 +493,7 @@ function refreshUi() {
 }
 
 const SAVE_IDS = ['slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
-const SAVE_CHK = ['bold', 'italic', 'fit', 'keepStyle', 'forceNew', 'keepOthers'];
+const SAVE_CHK = ['bold', 'italic', 'fit', 'keepStyle', 'forceNew', 'keepOthers', 'stripText'];
 function save() {
   try {
     const d = {}; SAVE_IDS.forEach(i => d[i] = $(i).value); SAVE_CHK.forEach(i => d[i] = $(i).checked);
