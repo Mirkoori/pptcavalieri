@@ -50,6 +50,12 @@ button.primary:disabled{opacity:.5;cursor:wait}
 .small{font-size:12px}
 a{color:var(--acc)}
 #progList input[type=text]{flex:1;width:auto}
+
+.hdl{position:absolute;right:0;bottom:0;width:16px;height:16px;background:var(--acc);cursor:nwse-resize;touch-action:none;border-top-left-radius:6px}
+#ovl{cursor:move;touch-action:none}
+details.adv{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+details.adv summary{cursor:pointer;color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:1px}
+details.adv[open] summary{margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -66,18 +72,14 @@ a{color:var(--acc)}
     <label for="tplFile">Template dell'agenzia o tuo (.pptx / .potx)</label>
     <input type="file" id="tplFile" accept=".pptx,.potx">
     <div id="tplInfo" class="pill"><span class="badge">Nessun template: userò uno sfondo semplice</span></div>
-    <div class="row c2" style="margin-top:10px">
-      <div><label for="slideIdx">Slide da usare come modello</label><input type="number" id="slideIdx" min="1" value="1"></div>
-      <div><label>&nbsp;</label><button type="button" id="btnSample" style="width:100%">Scarica template di esempio</button></div>
-    </div>
-    <div id="baseBox">
+    <div id="baseBox" style="margin-top:10px">
       <div class="row c3">
         <div><label for="bgColor">Colore sfondo</label><input type="color" id="bgColor" value="#0b1b3a"></div>
-        <div><label for="bgImg">Immagine sfondo (opz.)</label><input type="file" id="bgImg" accept="image/*"></div>
+        <div><label for="bgImg">Immagine sfondo</label><input type="file" id="bgImg" accept="image/*"></div>
         <div><label for="ratio">Formato</label><select id="ratio"><option value="169">16:9</option><option value="43">4:3</option><option value="916">9:16 verticale</option></select></div>
       </div>
     </div>
-    <div class="hint">Nel template scrivi <b>{{NOME}}</b> e (se vuoi) <b>{{RUOLO}}</b> dove devono comparire. Se non ci sono, uso il titolo della slide; se manca anche quello, aggiungo una casella di testo.</div>
+    <label class="chk" style="margin-top:8px"><input type="checkbox" id="stripText" checked> Cancella i testi che trovo nella slide del template (tengo sfondo, immagini e loghi)</label>
   </div>
 
   <div class="card">
@@ -95,16 +97,11 @@ a{color:var(--acc)}
         <button type="button" id="progReplace" style="padding:8px">Sostituisci la lista</button>
       </div>
     </div>
-    <label for="names" style="margin-top:10px">Un nome per riga. Per aggiungere il ruolo: <b>Nome Cognome | Ruolo</b> (o incolla due colonne da Excel)</label>
+    <label for="names" style="margin-top:10px">Un nome per riga. Per il ruolo: <b>Nome Cognome | Ruolo</b></label>
     <textarea id="names" spellcheck="false" placeholder="Mario Rossi | Amministratore Delegato&#10;Giulia Bianchi | Direttore Marketing&#10;Luca Verdi"></textarea>
     <div class="row c2" style="margin-top:8px">
-      <div><label for="lines">Disposizione del nome (a capo manuale: scrivi <b>/</b>)</label>
-        <select id="lines"><option value="1">Su una riga</option><option value="2">Nome sopra, cognome sotto</option></select></div>
-      <div></div>
-    </div>
-    <div class="row c2">
-      <div><label for="caseMode">Maiuscole</label>
-        <select id="caseMode"><option value="none">Come scritto</option><option value="upper">TUTTO MAIUSCOLO</option><option value="title">Prima Lettera Maiuscola</option></select></div>
+      <div><label for="lines">Nome su</label>
+        <select id="lines"><option value="1">Una riga</option><option value="2">Due righe (nome sopra, cognome sotto)</option></select></div>
       <div style="align-self:end"><span class="badge" id="cnt">0 relatori</span></div>
     </div>
   </div>
@@ -112,7 +109,9 @@ a{color:var(--acc)}
   <div class="card">
     <h2><span class="n">3</span>Testo</h2>
     <div class="row c2">
-      <div><label for="font">Font (deve essere installato sul PC che apre il file)</label>
+      <div><label for="place">Dove va il testo</label>
+        <select id="place"><option value="free">Lo trascino io nell'anteprima</option><option value="tpl">Come nel template (segnaposto o titolo)</option></select></div>
+      <div><label for="font">Font (installato sul PC che apre il file)</label>
         <input type="text" id="font" list="fonts" value="Arial">
         <datalist id="fonts">
           <option>Arial</option><option>Arial Black</option><option>Calibri</option><option>Calibri Light</option><option>Cambria</option>
@@ -121,53 +120,56 @@ a{color:var(--acc)}
           <option>Roboto</option><option>Segoe UI</option><option>Tahoma</option><option>Times New Roman</option><option>Trebuchet MS</option><option>Verdana</option>
           <option>Bebas Neue</option><option>Oswald</option><option>Lato</option>
         </datalist></div>
-      <div class="row c2" style="margin:0">
-        <div><label for="size">Nome (pt)</label><input type="number" id="size" min="8" max="400" value="54"></div>
-        <div><label for="roleRatio">Ruolo (% nome)</label><input type="number" id="roleRatio" min="20" max="100" value="55"></div>
-      </div>
     </div>
     <div class="row c4">
-      <div><label for="color">Colore nome</label><input type="color" id="color" value="#ffffff"></div>
-      <div><label for="roleColor">Colore ruolo</label><input type="color" id="roleColor" value="#9ec8ff"></div>
+      <div><label for="size">Grandezza (pt)</label><input type="number" id="size" min="8" max="400" value="54"></div>
+      <div><label for="color">Colore</label><input type="color" id="color" value="#ffffff"></div>
       <div><label for="align">Allineamento</label><select id="align"><option value="l">Sinistra</option><option value="ctr" selected>Centro</option><option value="r">Destra</option></select></div>
-      <div><label for="anchor">Verticale</label><select id="anchor"><option value="t">Alto</option><option value="ctr">Centro</option><option value="b">Basso</option></select></div>
+      <div style="align-self:end"><label class="chk"><input type="checkbox" id="bold" checked> Grassetto</label></div>
     </div>
-    <label class="chk"><input type="checkbox" id="bold" checked> Grassetto nome</label>
-    <label class="chk"><input type="checkbox" id="italic"> Corsivo</label>
-    <label class="chk"><input type="checkbox" id="fit" checked> Riduci automaticamente i nomi lunghi per farli stare in una riga</label>
-    <label class="chk"><input type="checkbox" id="keepStyle"> Se uso {{NOME}} o il titolo del template: mantieni font e colori del template</label>
-    <div class="hint" style="margin-top:8px">Posizione della casella (% della slide) — vale quando aggiungo una nuova casella di testo</div>
-    <div class="row c4" style="margin-top:6px">
-      <div><label for="px">X %</label><input type="number" id="px" min="0" max="100" value="6"></div>
-      <div><label for="py">Y %</label><input type="number" id="py" min="0" max="100" value="68"></div>
-      <div><label for="pw">Largh. %</label><input type="number" id="pw" min="5" max="100" value="88"></div>
-      <div><label for="ph">Alt. %</label><input type="number" id="ph" min="5" max="100" value="24"></div>
-    </div>
-    <label class="chk"><input type="checkbox" id="stripText"> Rimuovi gli altri testi della slide modello (tengo sfondo, immagini e loghi)</label>
-    <label class="chk"><input type="checkbox" id="forceNew"> Ignora segnaposto e titolo: usa sempre una nuova casella di testo</label>
+    <div class="hint">Con "Lo trascino io": trascina il testo nell'anteprima, l'angolo azzurro lo ridimensiona.</div>
+    <details class="adv"><summary>Altre opzioni testo</summary>
+      <div class="row c3">
+        <div><label for="roleRatio">Ruolo (% del nome)</label><input type="number" id="roleRatio" min="20" max="100" value="55"></div>
+        <div><label for="roleColor">Colore ruolo</label><input type="color" id="roleColor" value="#9ec8ff"></div>
+        <div><label for="anchor">Verticale</label><select id="anchor"><option value="t">Alto</option><option value="ctr" selected>Centro</option><option value="b">Basso</option></select></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="italic"> Corsivo</label>
+      <label class="chk"><input type="checkbox" id="fit" checked> Riduci i nomi lunghi per farli stare in una riga</label>
+      <div class="row c2"><div><label for="caseMode">Maiuscole</label>
+        <select id="caseMode"><option value="none">Come scritto</option><option value="upper">TUTTO MAIUSCOLO</option><option value="title">Prima Lettera Maiuscola</option></select></div><div></div></div>
+      <div class="row c4">
+        <div><label for="px">X %</label><input type="number" id="px" min="0" max="100" step="0.5" value="6"></div>
+        <div><label for="py">Y %</label><input type="number" id="py" min="0" max="100" step="0.5" value="70"></div>
+        <div><label for="pw">Largh. %</label><input type="number" id="pw" min="5" max="100" step="0.5" value="88"></div>
+        <div><label for="ph">Alt. %</label><input type="number" id="ph" min="3" max="100" step="0.5" value="22"></div>
+      </div>
+    </details>
   </div>
 
   <div class="card">
     <h2><span class="n">4</span>Banner</h2>
-    <label class="chk"><input type="checkbox" id="bnOn"> Crea un banner sotto il nome (il testo va dentro il banner)</label>
+    <label class="chk"><input type="checkbox" id="bnOn"> Aggiungi un banner sotto il nome (il testo va dentro il banner)</label>
     <div class="row c3">
       <div><label for="bnPreset">Posizione rapida</label><select id="bnPreset"><option value="full">In basso, tutta larghezza</option><option value="inset">In basso, con margini</option><option value="middle">Al centro</option><option value="top">In alto</option><option value="custom">Personalizzata</option></select></div>
       <div><label for="bnColor">Colore</label><input type="color" id="bnColor" value="#0b1b3a"></div>
       <div><label for="bnOpacity">Opacità %</label><input type="number" id="bnOpacity" min="10" max="100" value="90"></div>
     </div>
-    <div class="row c4">
-      <div><label for="bnX">X %</label><input type="number" id="bnX" min="0" max="100" step="0.5" value="0"></div>
-      <div><label for="bnY">Y %</label><input type="number" id="bnY" min="0" max="100" step="0.5" value="78"></div>
-      <div><label for="bnW">Largh. %</label><input type="number" id="bnW" min="5" max="100" step="0.5" value="100"></div>
-      <div><label for="bnH">Alt. %</label><input type="number" id="bnH" min="3" max="100" step="0.5" value="22"></div>
-    </div>
-    <div class="row c3">
-      <div><label for="bnLineColor">Colore linea</label><input type="color" id="bnLineColor" value="#f5b942"></div>
-      <div><label for="bnLinePos">Linea</label><select id="bnLinePos"><option value="above">Sopra il banner</option><option value="below">Sotto il banner</option></select></div>
-      <div style="align-self:end"><label class="chk"><input type="checkbox" id="bnLine" checked> Linea di accento</label></div>
-    </div>
-    <div class="hint"><b>Trascina il banner nell'anteprima</b> per spostarlo, oppure usa X / Y / Largh. / Alt.</div>
-    <div class="hint">Con il banner attivo ignoro segnaposto e titolo del template: il nome va sempre nel banner. Il banner sta sopra la grafica del template.</div>
+    <label class="chk"><input type="checkbox" id="bnLine" checked> Linea di accento</label>
+    <div class="hint">Trascina il banner nell'anteprima per spostarlo; l'angolo azzurro lo ridimensiona.</div>
+    <details class="adv"><summary>Altre opzioni banner</summary>
+      <div class="row c3">
+        <div><label for="bnLineColor">Colore linea</label><input type="color" id="bnLineColor" value="#f5b942"></div>
+        <div><label for="bnLinePos">Linea</label><select id="bnLinePos"><option value="above">Sopra il banner</option><option value="below">Sotto il banner</option></select></div>
+        <div></div>
+      </div>
+      <div class="row c4">
+        <div><label for="bnX">X %</label><input type="number" id="bnX" min="0" max="100" step="0.5" value="0"></div>
+        <div><label for="bnY">Y %</label><input type="number" id="bnY" min="0" max="100" step="0.5" value="78"></div>
+        <div><label for="bnW">Largh. %</label><input type="number" id="bnW" min="5" max="100" step="0.5" value="100"></div>
+        <div><label for="bnH">Alt. %</label><input type="number" id="bnH" min="3" max="100" step="0.5" value="22"></div>
+      </div>
+    </details>
   </div>
 
   <div class="card">
@@ -200,17 +202,24 @@ a{color:var(--acc)}
       <div><label for="trSpd">Velocità</label><select id="trSpd"><option value="fast">Veloce</option><option value="med" selected>Media</option><option value="slow">Lenta</option></select></div>
     </div>
     <div class="row c2">
-      <div><label for="advSec">Avanza da solo dopo (secondi, 0 = solo a click)</label><input type="number" id="advSec" min="0" max="3600" value="0"></div>
+      <div><label for="advSec">Avanza da solo dopo (secondi, 0 = a click)</label><input type="number" id="advSec" min="0" max="3600" value="0"></div>
       <div></div>
     </div>
   </div>
 
   <div class="card">
     <h2><span class="n">6</span>Crea</h2>
-    <label class="chk"><input type="checkbox" id="keepOthers"> Mantieni anche le altre slide del template (es. apertura / chiusura)</label>
-    <div class="row c2" style="margin-top:8px"><div><label for="outName">Nome file</label><input type="text" id="outName" value="cavalieri"></div><div></div></div>
+    <div class="row c2"><div><label for="outName">Nome file</label><input type="text" id="outName" value="cavalieri"></div><div></div></div>
     <button class="primary" id="go" type="button">Genera e scarica il .pptx</button>
     <div id="log"></div>
+    <details class="adv"><summary>Opzioni template</summary>
+      <div class="row c2">
+        <div><label for="slideIdx">Slide da usare come modello</label><input type="number" id="slideIdx" min="1" value="1"></div>
+        <div><label>&nbsp;</label><button type="button" id="btnSample" style="width:100%">Scarica template di esempio</button></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="keepOthers"> Mantieni anche le altre slide del template (es. apertura / chiusura)</label>
+      <div class="hint">Segnaposto: nel template scrivi <b>{{NOME}}</b> e <b>{{RUOLO}}</b> dove devono comparire.</div>
+    </details>
   </div>
 
 </section>
@@ -219,10 +228,12 @@ a{color:var(--acc)}
   <div class="card">
     <h2>Anteprima (indicativa)</h2>
     <div id="stage">
-      <div id="bnr" style="position:absolute;display:none;cursor:move;touch-action:none;z-index:2"></div><div id="bnrLine" style="position:absolute;display:none;pointer-events:none;z-index:2"></div><div id="ovl"><div id="pvName">Mario Rossi</div><div id="pvRole">Amministratore Delegato</div></div>
+      <div id="bnr" style="position:absolute;display:none;cursor:move;touch-action:none;z-index:2"><div class="hdl" id="bnrH"></div></div>
+      <div id="bnrLine" style="position:absolute;display:none;pointer-events:none;z-index:2"></div>
+      <div id="ovl"><div id="pvName">Mario Rossi</div><div id="pvRole">Amministratore Delegato</div><div class="hdl" id="ovlH"></div></div>
       <div id="stageNote"></div>
     </div>
-    <div class="hint">L'anteprima mostra posizione e stile del testo sul primo nome della lista. Lo sfondo reale del template si vede solo in PowerPoint: se il file contiene una miniatura la uso qui.</div>
+    <div class="hint">Trascina il testo (o il banner) dove vuoi. Lo sfondo reale del template si vede solo in PowerPoint: se il file contiene una miniatura la uso qui.</div>
   </div>
 </aside>
 </main>

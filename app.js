@@ -58,11 +58,16 @@ const PH_ALL = /\{\{\s*(NOME|NAME|RUOLO|ROLE)\s*\}\}/gi;
 async function inspectTemplate(buf) {
   const zip = await JSZip.loadAsync(buf);
   const deck = await readDeck(zip);
-  const info = { slides: deck.slides.length, cx: deck.cx, cy: deck.cy, hasPh: [], hasTitle: [], thumb: null };
+  const info = { slides: deck.slides.length, cx: deck.cx, cy: deck.cy, hasPh: [], hasTitle: [], texts: [], pics: [], thumb: null };
   for (const s of deck.slides) {
     const x = await zip.file(s.path).async('string');
     info.hasPh.push(PH_TEST.test(x));
     info.hasTitle.push(/<p:ph[^>]*type="(title|ctrTitle)"/.test(x));
+    const d = parseXml(x);
+    let tx = 0;
+    for (const t of Array.from(d.getElementsByTagNameNS(NS_A, 't'))) if (t.textContent.trim()) tx++;
+    info.texts.push(tx);
+    info.pics.push(d.getElementsByTagNameNS(NS_P, 'pic').length + (/<p:bg>[\s\S]*blipFill/.test(x) ? 1 : 0));
   }
   const th = zip.file('docProps/thumbnail.jpeg') || zip.file('docProps/thumbnail.jpg') || zip.file('docProps/thumbnail.png');
   if (th) info.thumb = await th.async('blob');
@@ -272,6 +277,10 @@ function transformSlide(xml, person, o, slideW, slideH) {
       if (keepTitle && ph && /^(title|ctrTitle)$/.test(ph.getAttribute('type') || '')) continue;
       sp.parentNode.removeChild(sp);
     }
+    for (const gf of Array.from(doc.getElementsByTagNameNS(NS_P, 'graphicFrame'))) {
+      const txt = Array.from(gf.getElementsByTagNameNS(NS_A, 't')).map(t => t.textContent).join('').trim();
+      if (txt && !PH_TEST.test(txt)) gf.parentNode.removeChild(gf);
+    }
   }
 
   if (o.bnOn) addBanner(doc, o, slideW, slideH);
@@ -477,7 +486,7 @@ function readOpts() {
     color: $('color').value, roleColor: $('roleColor').value,
     align: $('align').value, anchor: $('anchor').value,
     bold: $('bold').checked, italic: $('italic').checked, fit: $('fit').checked,
-    keepStyle: $('keepStyle').checked, forceNew: $('forceNew').checked,
+    keepStyle: $('place').value === 'tpl', forceNew: $('place').value !== 'tpl',
     px: n('px', 6), py: n('py', 68), pw: n('pw', 88), ph: n('ph', 24),
     trType: $('trType').value, trDir: $('trDir').value, trSpd: $('trSpd').value, advSec: n('advSec', 0),
     twoLines: $('lines').value === '2', keepOthers: $('keepOthers').checked, stripText: $('stripText').checked,
@@ -497,6 +506,7 @@ function refreshUi() {
   $('cnt').textContent = people.length + (people.length === 1 ? ' relatore' : ' relatori');
   $('trDir').disabled = !DIR_TYPES.includes(o.trType);
   $('baseBox').style.display = state.tplBuf ? 'none' : '';
+  $('place').disabled = !state.tplBuf; if (!state.tplBuf) $('place').value = 'free';
   $('keepOthers').disabled = !state.tplBuf;
 
   // info template
@@ -512,7 +522,10 @@ function refreshUi() {
     willUseTitle = !willUsePh && state.info.hasTitle[i] && !o.forceNew;
     if (willUsePh) badge('Trovato {{NOME}} nella slide ' + (i + 1), 'ok');
     else if (willUseTitle) badge('Nessun {{NOME}}: scrivo nel titolo della slide ' + (i + 1), 'warn');
-    else badge('Nessun segnaposto né titolo: aggiungo una casella di testo', 'warn');
+    else badge('Nessun segnaposto né titolo: aggiungo io il testo', 'warn');
+    const tcount = state.info.texts[i], pcount = state.info.pics[i];
+    if (tcount > 0) badge(o.stripText ? `${tcount} testi nel template: li cancello` : `${tcount} testi nel template: li lascio`, o.stripText ? 'ok' : 'warn');
+    else if (pcount > 0) badge('Nessun testo modificabile: le scritte che vedi sono nell\'immagine e non si possono togliere', 'warn');
   }
 
   // anteprima
@@ -540,6 +553,7 @@ function refreshUi() {
     note.textContent = willUsePh ? 'Il testo andrà al posto di {{NOME}} / {{RUOLO}} nel template.' : 'Il testo andrà nel titolo della slide modello.';
   } else {
     note.style.display = 'none'; ovl.classList.remove('off');
+    ovl.style.pointerEvents = o.bnOn ? 'none' : 'auto'; $('ovlH').style.display = o.bnOn ? 'none' : 'block';
     Object.assign(ovl.style, {
       left: o.px + '%', top: o.py + '%', width: o.pw + '%', height: o.ph + '%',
       justifyContent: { t: 'flex-start', ctr: 'center', b: 'flex-end' }[o.anchor],
@@ -556,17 +570,17 @@ function refreshUi() {
   save();
 }
 
-const SAVE_IDS = ['lines', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
-const SAVE_CHK = ['bold', 'italic', 'fit', 'keepStyle', 'forceNew', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
+const SAVE_IDS = ['lines', 'place', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
+const SAVE_CHK = ['bold', 'italic', 'fit', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
 function save() {
   try {
     const d = {}; SAVE_IDS.forEach(i => d[i] = $(i).value); SAVE_CHK.forEach(i => d[i] = $(i).checked);
-    localStorage.setItem('pptcavalieri', JSON.stringify(d));
+    localStorage.setItem('pptcavalieri2', JSON.stringify(d));
   } catch (e) { /* storage non disponibile: pazienza */ }
 }
 function load() {
   try {
-    const d = JSON.parse(localStorage.getItem('pptcavalieri') || 'null'); if (!d) return;
+    const d = JSON.parse(localStorage.getItem('pptcavalieri2') || 'null'); if (!d) return;
     SAVE_IDS.forEach(i => { if (d[i] !== undefined) $(i).value = d[i]; });
     SAVE_CHK.forEach(i => { if (d[i] !== undefined) $(i).checked = d[i]; });
   } catch (e) { /* ignora */ }
@@ -588,6 +602,7 @@ async function onTemplate(file) {
     state.tplBuf = buf; state.tplName = file.name; state.info = info;
     if (info.thumb) state.thumbUrl = URL.createObjectURL(info.thumb);
     $('slideIdx').max = info.slides;
+    { const i = Math.min(Math.max(parseInt($('slideIdx').value) || 1, 1), info.slides) - 1; $('place').value = (info.hasPh[i] || info.hasTitle[i]) ? 'tpl' : 'free'; }
     log('Template caricato.', 'ok');
   } catch (e) {
     state.tplBuf = null; state.info = null; $('tplFile').value = '';
@@ -666,30 +681,37 @@ function applyProg(replace) {
   $('progBox').style.display = 'none'; $('progFile').value = '';
   refreshUi(); log(`${lines.length} nomi inseriti nella lista.`, 'ok');
 }
-/* ------------------------------------------------------------------ banner: preset e trascinamento */
+/* ------------------------------------------------------------------ trascinamento (testo e banner) */
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+const r05 = v => Math.round(v * 2) / 2;
+function enableDrag(el, hdl, ids, onChange) {
+  let d = null;
+  const get = () => ({ x: +$(ids.x).value, y: +$(ids.y).value, w: +$(ids.w).value, h: +$(ids.h).value });
+  const pos = e => { const r = $('stage').getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * 100, y: (e.clientY - r.top) / r.height * 100 }; };
+  el.addEventListener('pointerdown', e => {
+    if (e.target === hdl) { d = { mode: 'size', p: pos(e), r: get() }; hdl.setPointerCapture(e.pointerId); }
+    else { d = { mode: 'move', p: pos(e), r: get() }; el.setPointerCapture(e.pointerId); }
+    e.preventDefault();
+  });
+  el.addEventListener('pointermove', e => {
+    if (!d) return;
+    const p = pos(e), dx = p.x - d.p.x, dy = p.y - d.p.y, r = Object.assign({}, d.r);
+    if (d.mode === 'move') { r.x = clamp(d.r.x + dx, 0, 100 - r.w); r.y = clamp(d.r.y + dy, 0, 100 - r.h); }
+    else { r.w = clamp(d.r.w + dx, 5, 100 - r.x); r.h = clamp(d.r.h + dy, 3, 100 - r.y); }
+    $(ids.x).value = r05(r.x); $(ids.y).value = r05(r.y); $(ids.w).value = r05(r.w); $(ids.h).value = r05(r.h);
+    if (onChange) onChange(); refreshUi();
+  });
+  const end = () => { d = null; };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+}
 document.addEventListener('DOMContentLoaded', () => {
   $('bnPreset').addEventListener('change', () => {
     const f = BN_PRESETS[$('bnPreset').value]; if (!f) return;
     const h = parseFloat($('bnH').value) || 20, r = f({ h });
     $('bnX').value = r.x; $('bnY').value = Math.round(r.y * 10) / 10; $('bnW').value = r.w; refreshUi();
   });
-  const bn = $('bnr'), stage = $('stage');
-  let drag = null;
-  bn.addEventListener('pointerdown', e => {
-    const o = readOpts(); const r = bannerRect(o);
-    drag = { x0: e.clientX, y0: e.clientY, bx: r.x, by: r.y, w: r.w, h: r.h };
-    bn.setPointerCapture(e.pointerId); e.preventDefault();
-  });
-  bn.addEventListener('pointermove', e => {
-    if (!drag) return;
-    const sr = stage.getBoundingClientRect();
-    const nx = drag.bx + (e.clientX - drag.x0) / sr.width * 100, ny = drag.by + (e.clientY - drag.y0) / sr.height * 100;
-    $('bnX').value = Math.round(Math.min(Math.max(nx, 0), 100 - drag.w) * 10) / 10;
-    $('bnY').value = Math.round(Math.min(Math.max(ny, 0), 100 - drag.h) * 10) / 10;
-    $('bnPreset').value = 'custom'; refreshUi();
-  });
-  const end = () => { drag = null; };
-  bn.addEventListener('pointerup', end); bn.addEventListener('pointercancel', end);
+  enableDrag($('bnr'), $('bnrH'), { x: 'bnX', y: 'bnY', w: 'bnW', h: 'bnH' }, () => { $('bnPreset').value = 'custom'; });
+  enableDrag($('ovl'), $('ovlH'), { x: 'px', y: 'py', w: 'pw', h: 'ph' });
   ['bnX', 'bnY', 'bnW', 'bnH'].forEach(id => $(id).addEventListener('input', () => { $('bnPreset').value = 'custom'; }));
 });
 
