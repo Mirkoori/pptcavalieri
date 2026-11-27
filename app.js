@@ -179,6 +179,112 @@ function textboxXml(id, label, o, xEmu, yEmu, wEmu, hEmu, paras) {
     `<p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" rtlCol="0" anchor="${o.anchor}"><a:noAutofit/></a:bodyPr><a:lstStyle/>${pXml}</p:txBody></p:sp>`;
 }
 
+/* ------------------------------------------------------------------ sfondo del template -> colori */
+const hex2rgb = h => { h = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)); };
+const rgb2hex = c => '#' + c.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
+const darken = (c, f) => c.map(v => v * f);
+function bannerFrom(c) { // stesso colore dello sfondo, ma abbastanza scuro da leggerci sopra in bianco
+  const lum = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+  return darken(c, lum > 0.3 ? 0.3 / lum : 0.85);
+}
+function satOf(c) { const mx = Math.max(...c), mn = Math.min(...c); return mx ? (mx - mn) / mx : 0; }
+function resolvePath(base, t) {
+  if (t.startsWith('/')) return t.slice(1);
+  const parts = (base + t).split('/'), out = [];
+  for (const p of parts) { if (p === '..') out.pop(); else if (p !== '.') out.push(p); }
+  return out.join('/');
+}
+async function canvasFromBlob(blob, aspect) {
+  const bmp = await createImageBitmap(blob);
+  const W = 240, H = Math.max(40, Math.round(W / aspect));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  cv.getContext('2d', { willReadFrequently: true }).drawImage(bmp, 0, 0, W, H);
+  return cv;
+}
+async function loadBackdrop(buf, idx) {
+  const zip = await JSZip.loadAsync(buf);
+  const deck = await readDeck(zip);
+  const s = deck.slides[Math.min(Math.max(idx, 1), deck.slides.length) - 1];
+  const aspect = deck.cx / deck.cy;
+  const xml = await zip.file(s.path).async('string');
+  const doc = parseXml(xml);
+  const rf = zip.file(relsPathOf(s.path));
+  const rels = rf ? Array.from(parseXml(await rf.async('string')).getElementsByTagNameNS(NS_REL, 'Relationship')) : [];
+  const mediaOf = rid => { const r = rels.find(x => x.getAttribute('Id') === rid); return r ? resolvePath('ppt/slides/', r.getAttribute('Target')) : null; };
+  const embedOf = el => { const b = el.getElementsByTagNameNS(NS_A, 'blip')[0]; return b ? b.getAttributeNS(NS_R, 'embed') : null; };
+  let mediaPath = null, solid = null;
+  const bg = doc.getElementsByTagNameNS(NS_P, 'bg')[0];
+  if (bg) {
+    const e = embedOf(bg); if (e) mediaPath = mediaOf(e);
+    else { const c = bg.getElementsByTagNameNS(NS_A, 'srgbClr')[0]; if (c) solid = '#' + c.getAttribute('val'); }
+  }
+  if (!mediaPath && !solid) { // immagine grande quasi a tutta slide
+    let best = 0;
+    for (const pic of Array.from(doc.getElementsByTagNameNS(NS_P, 'pic'))) {
+      const ext = pic.getElementsByTagNameNS(NS_A, 'ext')[0]; if (!ext) continue;
+      const area = ext.getAttribute('cx') * ext.getAttribute('cy') / (deck.cx * deck.cy);
+      const e = embedOf(pic); if (area >= 0.6 && area > best && e) { best = area; mediaPath = mediaOf(e); }
+    }
+  }
+  try {
+    if (mediaPath && zip.file(mediaPath)) return { canvas: await canvasFromBlob(await zip.file(mediaPath).async('blob'), aspect) };
+  } catch (e) { /* formato non leggibile dal browser */ }
+  if (solid) return { solid };
+  const th = zip.file('docProps/thumbnail.jpeg');
+  if (th && idx === 1) { try { return { canvas: await canvasFromBlob(await th.async('blob'), aspect) }; } catch (e) { /* ignora */ } }
+  return null;
+}
+function binsOf(cv, rect) {
+  const W = cv.width, H = cv.height;
+  const x0 = Math.floor(W * rect.x / 100), y0 = Math.floor(H * rect.y / 100);
+  const w = Math.max(1, Math.floor(W * rect.w / 100)), h = Math.max(1, Math.floor(H * rect.h / 100));
+  const d = cv.getContext('2d').getImageData(Math.min(x0, W - 1), Math.min(y0, H - 1), Math.min(w, W - x0), Math.min(h, H - y0)).data;
+  const bins = new Map();
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 200) continue;
+    const k = (d[i] >> 4) << 8 | (d[i + 1] >> 4) << 4 | (d[i + 2] >> 4);
+    const b = bins.get(k) || { n: 0, r: 0, g: 0, b: 0 }; b.n++; b.r += d[i]; b.g += d[i + 1]; b.b += d[i + 2]; bins.set(k, b);
+  }
+  return Array.from(bins.values()).map(b => ({ n: b.n, c: [b.r / b.n, b.g / b.n, b.b / b.n] })).sort((p, q) => q.n - p.n);
+}
+function palette(cv) {
+  const all = binsOf(cv, { x: 0, y: 0, w: 100, h: 100 }), tot = all.reduce((s, b) => s + b.n, 0) || 1;
+  const out = [];
+  for (const b of all.slice(0, 40)) {
+    if (out.length >= 6) break;
+    if (out.every(o => Math.hypot(o[0] - b.c[0], o[1] - b.c[1], o[2] - b.c[2]) > 60) && b.n / tot > 0.004) out.push(b.c);
+  }
+  const accent = all.slice(0, 60).filter(b => b.n / tot > 0.003 && Math.max(...b.c) > 140 && satOf(b.c) > 0.3).sort((p, q) => satOf(q.c) * Math.sqrt(q.n) - satOf(p.c) * Math.sqrt(p.n))[0];
+  return { colors: out, accent: accent ? accent.c : null };
+}
+function autoColors() {
+  const bd = state.backdrop; if (!bd) return null;
+  if (bd.solid) return { banner: rgb2hex(bannerFrom(hex2rgb(bd.solid))), line: null };
+  const r = bannerRect({ bnX: +$('bnX').value, bnY: +$('bnY').value, bnW: +$('bnW').value, bnH: +$('bnH').value });
+  const dom = binsOf(bd.canvas, r)[0];
+  return { banner: rgb2hex(bannerFrom(dom ? dom.c : [11, 27, 58])), line: bd.accent ? rgb2hex(bd.accent) : null };
+}
+async function updateBackdrop() {
+  state.backdrop = null;
+  try {
+    if (state.tplBuf) state.backdrop = await loadBackdrop(state.tplBuf, Math.round(parseFloat($('slideIdx').value) || 1));
+    else if (state.bgData) {
+      const blob = await (await fetch('data:' + state.bgData)).blob();
+      const r = $('ratio').value; state.backdrop = { canvas: await canvasFromBlob(blob, r === '43' ? 4 / 3 : r === '916' ? 9 / 16 : 16 / 9) };
+    } else state.backdrop = { solid: $('bgColor').value };
+  } catch (e) { console.warn('sfondo non leggibile', e); state.backdrop = null; }
+  const bd = state.backdrop;
+  if (bd && bd.canvas) { const p = palette(bd.canvas); bd.accent = p.accent; bd.palette = p.colors; bd.url = bd.canvas.toDataURL('image/jpeg', 0.7); }
+  const box = $('palette'); box.innerHTML = '';
+  if (bd && bd.palette) for (const c of bd.palette) {
+    const b = document.createElement('button'); b.type = 'button'; b.title = rgb2hex(c);
+    b.style.cssText = `width:26px;height:26px;padding:0;border-radius:6px;background:${rgb2hex(c)}`;
+    b.addEventListener('click', () => { $('bnAuto').checked = false; $('bnColor').value = rgb2hex(c); refreshUi(); });
+    box.appendChild(b);
+  }
+  refreshUi();
+}
+
 /* ------------------------------------------------------------------ banner */
 const BN_PRESETS = {
   full: o => ({ x: 0, y: 100 - o.h, w: 100 }),
@@ -500,7 +606,15 @@ function readOpts() {
 }
 
 const DIR_TYPES = ['push', 'wipe', 'cover', 'pull', 'split', 'blinds', 'checker', 'randomBar', 'comb'];
+function applyAutoColors() {
+  const on = $('bnAuto').checked && state.backdrop;
+  $('bnColor').disabled = !!on;
+  if (!on) return;
+  const c = autoColors(); if (!c) return;
+  $('bnColor').value = c.banner; $('bnLineColor').value = c.line || '#f5b942';
+}
 function refreshUi() {
+  applyAutoColors();
   const o = readOpts();
   const people = parseNames($('names').value, o.caseMode, o.twoLines);
   $('cnt').textContent = people.length + (people.length === 1 ? ' relatore' : ' relatori');
@@ -534,9 +648,10 @@ function refreshUi() {
   const asp = state.info ? state.info.cx / state.info.cy : (rr === '43' ? 4 / 3 : rr === '916' ? 9 / 16 : 16 / 9);
   stage.style.aspectRatio = String(asp);
   stage.style.maxWidth = asp < 1 ? '300px' : 'none'; stage.style.marginLeft = stage.style.marginRight = 'auto';
-  if (state.thumbUrl && state.tplBuf) { stage.style.backgroundImage = `url(${state.thumbUrl})`; stage.style.backgroundColor = '#2a2f39'; }
+  if (state.backdrop && state.backdrop.url) { stage.style.backgroundImage = `url(${state.backdrop.url})`; stage.style.backgroundSize = '100% 100%'; }
+  else if (state.thumbUrl && state.tplBuf) { stage.style.backgroundImage = `url(${state.thumbUrl})`; stage.style.backgroundColor = '#2a2f39'; }
   else stage.style.backgroundImage = state.bgData && !state.tplBuf ? `url(data:${state.bgData})` : 'none';
-  stage.style.backgroundColor = state.tplBuf ? '#2a2f39' : $('bgColor').value;
+  stage.style.backgroundColor = state.tplBuf ? (state.backdrop && state.backdrop.solid ? state.backdrop.solid : '#2a2f39') : $('bgColor').value;
   const bn = $('bnr'), bl = $('bnrLine');
   if (o.bnOn) {
     const r = bannerRect(o);
@@ -571,7 +686,7 @@ function refreshUi() {
 }
 
 const SAVE_IDS = ['lines', 'place', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
-const SAVE_CHK = ['bold', 'italic', 'fit', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
+const SAVE_CHK = ['bnAuto', 'bold', 'italic', 'fit', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
 function save() {
   try {
     const d = {}; SAVE_IDS.forEach(i => d[i] = $(i).value); SAVE_CHK.forEach(i => d[i] = $(i).checked);
@@ -608,11 +723,11 @@ async function onTemplate(file) {
     state.tplBuf = null; state.info = null; $('tplFile').value = '';
     log('Impossibile leggere il template: ' + e.message, 'err');
   }
-  refreshUi();
+  await updateBackdrop();
 }
 
 async function onGo() {
-  const btn = $('go'); const o = readOpts();
+  const btn = $('go'); applyAutoColors(); const o = readOpts();
   const people = parseNames($('names').value, o.caseMode, o.twoLines);
   if (!people.length) { log('Inserisci almeno un nome.', 'err'); return; }
   btn.disabled = true; log('Creo la presentazione…');
@@ -641,9 +756,13 @@ document.addEventListener('DOMContentLoaded', () => {
     catch (e) { log('Errore: ' + e.message, 'err'); }
   });
   $('go').addEventListener('click', onGo);
+  ['slideIdx'].forEach(id => $(id).addEventListener('change', () => { if (state.tplBuf) updateBackdrop(); }));
+  $('bgColor').addEventListener('change', () => { if (!state.tplBuf) updateBackdrop(); });
+  $('bgImg').addEventListener('change', () => setTimeout(() => { if (!state.tplBuf) updateBackdrop(); }, 300));
+  $('ratio').addEventListener('change', () => { if (!state.tplBuf && state.bgData) updateBackdrop(); });
   document.querySelectorAll('input,select,textarea').forEach(el => { if (el.type !== 'file') { el.addEventListener('input', refreshUi); el.addEventListener('change', refreshUi); } });
   window.addEventListener('resize', refreshUi);
-  refreshUi();
+  updateBackdrop();
 });
 
 /* ------------------------------------------------------------------ programma -> nomi */
