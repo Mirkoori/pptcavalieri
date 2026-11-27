@@ -72,7 +72,7 @@ a{color:var(--acc)}
       <div class="row c3">
         <div><label for="bgColor">Colore sfondo</label><input type="color" id="bgColor" value="#0b1b3a"></div>
         <div><label for="bgImg">Immagine sfondo (opz.)</label><input type="file" id="bgImg" accept="image/*"></div>
-        <div><label for="ratio">Formato</label><select id="ratio"><option value="169">16:9</option><option value="43">4:3</option></select></div>
+        <div><label for="ratio">Formato</label><select id="ratio"><option value="169">16:9</option><option value="43">4:3</option><option value="916">9:16 verticale</option></select></div>
       </div>
     </div>
     <div class="hint">Nel template scrivi <b>{{NOME}}</b> e (se vuoi) <b>{{RUOLO}}</b> dove devono comparire. Se non ci sono, uso il titolo della slide; se manca anche quello, aggiungo una casella di testo.</div>
@@ -83,6 +83,11 @@ a{color:var(--acc)}
     <label for="names">Un nome per riga. Per aggiungere il ruolo: <b>Nome Cognome | Ruolo</b> (o incolla due colonne da Excel)</label>
     <textarea id="names" spellcheck="false" placeholder="Mario Rossi | Amministratore Delegato&#10;Giulia Bianchi | Direttore Marketing&#10;Luca Verdi"></textarea>
     <div class="row c2" style="margin-top:8px">
+      <div><label for="lines">Disposizione del nome (a capo manuale: scrivi <b>/</b>)</label>
+        <select id="lines"><option value="1">Su una riga</option><option value="2">Nome sopra, cognome sotto</option></select></div>
+      <div></div>
+    </div>
+    <div class="row c2">
       <div><label for="caseMode">Maiuscole</label>
         <select id="caseMode"><option value="none">Come scritto</option><option value="upper">TUTTO MAIUSCOLO</option><option value="title">Prima Lettera Maiuscola</option></select></div>
       <div style="align-self:end"><span class="badge" id="cnt">0 relatori</span></div>

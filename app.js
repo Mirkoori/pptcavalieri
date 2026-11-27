@@ -73,7 +73,7 @@ async function inspectTemplate(buf) {
 const _cv = document.createElement('canvas').getContext('2d');
 function textWidthPt(text, font, sizePt, bold, italic) {
   _cv.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${sizePt}px "${font}", Arial, sans-serif`;
-  return _cv.measureText(text).width;
+  return Math.max(...String(text).split('\n').map(l => _cv.measureText(l).width));
 }
 function fitSize(text, font, sizePt, bold, italic, boxWidthPt) {
   if (!boxWidthPt) return sizePt;
@@ -88,10 +88,15 @@ function applyCase(t, mode) {
   if (mode === 'title') return t.toLocaleLowerCase('it-IT').replace(/(^|[\s'’\-])(\p{L})/gu, (m, a, b) => a + b.toLocaleUpperCase('it-IT'));
   return t;
 }
-function parseNames(txt, caseMode) {
+function splitLines(name, twoLines) {
+  if (name.includes('/')) return name.split('/').map(s => s.trim()).filter(Boolean).join('\n'); // a capo manuale con "/"
+  const w = name.split(/\s+/);
+  return twoLines && w.length > 1 ? w.slice(0, -1).join(' ') + '\n' + w[w.length - 1] : name;
+}
+function parseNames(txt, caseMode, twoLines) {
   return txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
     let parts = l.split(/\t|\|/).map(x => x.trim());
-    return { name: applyCase(parts[0], caseMode), role: parts[1] ? applyCase(parts[1], caseMode === 'upper' ? 'upper' : 'none') : '' };
+    return { name: splitLines(applyCase(parts[0], caseMode), twoLines), role: parts[1] ? applyCase(parts[1], caseMode === 'upper' ? 'upper' : 'none') : '' };
   });
 }
 
@@ -129,8 +134,18 @@ function setParagraphText(doc, p, text, styleOpts) {
   kids(p, NS_A, 'br').forEach(r => p.removeChild(r));
   let t = firstKid(first, NS_A, 't');
   if (!t) { t = doc.createElementNS(NS_A, 'a:t'); first.appendChild(t); }
-  t.textContent = text;
+  const lines = String(text).split('\n');
+  t.textContent = lines[0];
   if (styleOpts) styleRun(doc, first, styleOpts);
+  let prev = first;
+  for (let k = 1; k < lines.length; k++) {
+    const br = doc.createElementNS(NS_A, 'a:br');
+    const rp = firstKid(first, NS_A, 'rPr'); if (rp) br.appendChild(rp.cloneNode(true));
+    p.insertBefore(br, prev.nextSibling);
+    const r2 = first.cloneNode(true); firstKid(r2, NS_A, 't').textContent = lines[k];
+    p.insertBefore(r2, br.nextSibling);
+    prev = r2;
+  }
 }
 
 function ancestorSp(el) { while (el && !(el.localName === 'sp' && el.namespaceURI === NS_P)) el = el.parentNode; return el; }
@@ -151,7 +166,8 @@ function maxId(doc) {
 function textboxXml(id, label, o, xEmu, yEmu, wEmu, hEmu, paras) {
   const pXml = paras.map(p => {
     const pr = `<a:rPr lang="it-IT" sz="${Math.round(p.size * 100)}" b="${p.bold ? 1 : 0}" i="${p.italic ? 1 : 0}" dirty="0"><a:solidFill><a:srgbClr val="${p.color.replace('#', '').toUpperCase()}"/></a:solidFill><a:latin typeface="${esc(o.font)}"/><a:ea typeface="${esc(o.font)}"/><a:cs typeface="${esc(o.font)}"/></a:rPr>`;
-    return `<a:p><a:pPr algn="${o.align}"/><a:r>${pr}<a:t>${esc(p.text)}</a:t></a:r></a:p>`;
+    const runs = String(p.text).split('\n').map(l => `<a:r>${pr}<a:t>${esc(l)}</a:t></a:r>`).join(`<a:br>${pr}</a:br>`);
+    return `<a:p><a:pPr algn="${o.align}"/>${runs}</a:p>`;
   }).join('');
   return `<p:sp xmlns:p="${NS_P}" xmlns:a="${NS_A}"><p:nvSpPr><p:cNvPr id="${id}" name="${esc(label)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>` +
     `<p:spPr><a:xfrm><a:off x="${Math.round(xEmu)}" y="${Math.round(yEmu)}"/><a:ext cx="${Math.round(wEmu)}" cy="${Math.round(hEmu)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>` +
@@ -433,10 +449,10 @@ async function buildDeck(buf, people, o) {
 /* ------------------------------------------------------------------ template base / di esempio (PptxGenJS) */
 async function makeBaseTemplate(withPlaceholders) {
   const pptx = new PptxGenJS();
-  const is43 = $('ratio').value === '43';
-  pptx.defineLayout({ name: 'CAV', width: is43 ? 10 : 13.333, height: 7.5 });
+  const r = $('ratio').value;
+  const W = r === '43' ? 10 : r === '916' ? 5.625 : 13.333, H = r === '916' ? 10 : 7.5;
+  pptx.defineLayout({ name: 'CAV', width: W, height: H });
   pptx.layout = 'CAV';
-  const W = is43 ? 10 : 13.333, H = 7.5;
   const s = pptx.addSlide();
   s.background = { color: $('bgColor').value.replace('#', '') };
   if (state.bgData) s.addImage({ data: state.bgData, x: 0, y: 0, w: W, h: H });
@@ -460,7 +476,7 @@ function readOpts() {
     keepStyle: $('keepStyle').checked, forceNew: $('forceNew').checked,
     px: n('px', 6), py: n('py', 68), pw: n('pw', 88), ph: n('ph', 24),
     trType: $('trType').value, trDir: $('trDir').value, trSpd: $('trSpd').value, advSec: n('advSec', 0),
-    keepOthers: $('keepOthers').checked, stripText: $('stripText').checked,
+    twoLines: $('lines').value === '2', keepOthers: $('keepOthers').checked, stripText: $('stripText').checked,
     bnOn: $('bnOn').checked, bnColor: $('bnColor').value, bnOpacity: n('bnOpacity', 90), bnPreset: $('bnPreset').value, bnH: n('bnH', 20), bnLine: $('bnLine').checked, bnLineColor: $('bnLineColor').value, caseMode: $('caseMode').value
   };
   if (o.bnOn) { // il testo va dentro il banner
@@ -473,7 +489,7 @@ function readOpts() {
 const DIR_TYPES = ['push', 'wipe', 'cover', 'pull', 'split', 'blinds', 'checker', 'randomBar', 'comb'];
 function refreshUi() {
   const o = readOpts();
-  const people = parseNames($('names').value, o.caseMode);
+  const people = parseNames($('names').value, o.caseMode, o.twoLines);
   $('cnt').textContent = people.length + (people.length === 1 ? ' relatore' : ' relatori');
   $('trDir').disabled = !DIR_TYPES.includes(o.trType);
   $('baseBox').style.display = state.tplBuf ? 'none' : '';
@@ -497,8 +513,10 @@ function refreshUi() {
 
   // anteprima
   const stage = $('stage'), ovl = $('ovl'), note = $('stageNote');
-  const is43 = !state.tplBuf ? $('ratio').value === '43' : (state.info && Math.abs(state.info.cx / state.info.cy - 4 / 3) < .05);
-  stage.style.aspectRatio = is43 ? '4/3' : '16/9';
+  const rr = $('ratio').value;
+  const asp = state.info ? state.info.cx / state.info.cy : (rr === '43' ? 4 / 3 : rr === '916' ? 9 / 16 : 16 / 9);
+  stage.style.aspectRatio = String(asp);
+  stage.style.maxWidth = asp < 1 ? '300px' : 'none'; stage.style.marginLeft = stage.style.marginRight = 'auto';
   if (state.thumbUrl && state.tplBuf) { stage.style.backgroundImage = `url(${state.thumbUrl})`; stage.style.backgroundColor = '#2a2f39'; }
   else stage.style.backgroundImage = state.bgData && !state.tplBuf ? `url(data:${state.bgData})` : 'none';
   stage.style.backgroundColor = state.tplBuf ? '#2a2f39' : $('bgColor').value;
@@ -509,8 +527,9 @@ function refreshUi() {
     Object.assign(bl.style, { display: o.bnLine ? 'block' : 'none', left: r.x + '%', width: r.w + '%', height: '0.8%', background: o.bnLineColor, top: (o.bnPreset === 'top' ? r.y + r.h : r.y - 0.8) + '%' });
   } else { bn.style.display = 'none'; bl.style.display = 'none'; }
   const sample = people[0] || { name: 'Mario Rossi', role: 'Amministratore Delegato' };
-  const slideWpt = state.info ? state.info.cx / EMU_PT : (is43 ? 720 : 960);
+  const slideWpt = state.info ? state.info.cx / EMU_PT : (rr === '43' ? 720 : rr === '916' ? 405 : 960);
   const k = stage.clientWidth / slideWpt;
+  $('pvName').style.whiteSpace = 'pre';
   if (willUsePh || willUseTitle) {
     ovl.classList.add('off');
     note.style.display = 'block';
@@ -533,7 +552,7 @@ function refreshUi() {
   save();
 }
 
-const SAVE_IDS = ['slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnPreset', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
+const SAVE_IDS = ['lines', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnPreset', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
 const SAVE_CHK = ['bold', 'italic', 'fit', 'keepStyle', 'forceNew', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
 function save() {
   try {
@@ -575,7 +594,7 @@ async function onTemplate(file) {
 
 async function onGo() {
   const btn = $('go'); const o = readOpts();
-  const people = parseNames($('names').value, o.caseMode);
+  const people = parseNames($('names').value, o.caseMode, o.twoLines);
   if (!people.length) { log('Inserisci almeno un nome.', 'err'); return; }
   btn.disabled = true; log('Creo la presentazione…');
   try {
