@@ -627,5 +627,48 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshUi();
 });
 
+/* ------------------------------------------------------------------ programma -> nomi */
+const prog = { entries: [] };
+function renderProg() {
+  const keepTitle = $('progTitles').checked, withRole = $('progRoles').checked;
+  const list = $('progList'); list.innerHTML = '';
+  prog.entries.forEach((e, i) => {
+    const row = document.createElement('label'); row.className = 'chk'; row.style.margin = '3px 0';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = e.on !== false; cb.addEventListener('change', () => { e.on = cb.checked; });
+    const tx = document.createElement('input'); tx.type = 'text'; tx.value = e.edited !== undefined ? e.edited : window.__prog.entryToLine(e, keepTitle, withRole);
+    tx.addEventListener('input', () => { e.edited = tx.value; });
+    row.appendChild(cb); row.appendChild(tx); list.appendChild(row);
+  });
+  $('progTitle').textContent = prog.entries.length + (prog.entries.length === 1 ? ' nome trovato' : ' nomi trovati');
+}
+function progLines() {
+  const keepTitle = $('progTitles').checked, withRole = $('progRoles').checked;
+  return prog.entries.filter(e => e.on !== false).map(e => (e.edited !== undefined ? e.edited : window.__prog.entryToLine(e, keepTitle, withRole)).trim()).filter(Boolean);
+}
+async function onProgram(file) {
+  if (!file) return;
+  try {
+    log('Leggo il programma…');
+    const text = await window.__prog.textFromFile(file);
+    prog.entries = window.__prog.parseProgram(text);
+    if (!prog.entries.length) { $('progBox').style.display = 'none'; log('Non ho trovato nomi in questo file. Prova con un altro formato o incolla i nomi a mano.', 'err'); return; }
+    $('progBox').style.display = 'block'; renderProg(); log(`Programma letto: ${prog.entries.length} nomi trovati, controllali e aggiungili alla lista.`, 'ok');
+  } catch (e) { console.error(e); log('Impossibile leggere il programma: ' + e.message, 'err'); }
+}
+function applyProg(replace) {
+  const lines = progLines(); if (!lines.length) return;
+  const cur = $('names').value.replace(/\s+$/, '');
+  $('names').value = replace || !cur ? lines.join('\n') : cur + '\n' + lines.join('\n');
+  $('progBox').style.display = 'none'; $('progFile').value = '';
+  refreshUi(); log(`${lines.length} nomi inseriti nella lista.`, 'ok');
+}
+document.addEventListener('DOMContentLoaded', () => {
+  $('progFile').addEventListener('change', e => onProgram(e.target.files[0]));
+  $('progClose').addEventListener('click', () => { $('progBox').style.display = 'none'; $('progFile').value = ''; });
+  $('progAdd').addEventListener('click', () => applyProg(false));
+  $('progReplace').addEventListener('click', () => applyProg(true));
+  ['progTitles', 'progRoles'].forEach(id => $(id).addEventListener('change', () => { prog.entries.forEach(e => delete e.edited); renderProg(); }));
+});
+
 // per i test automatici
 window.__cav = { buildDeck, parseNames, makeBaseTemplate, inspectTemplate };

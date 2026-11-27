@@ -48,6 +48,7 @@ button.primary:disabled{opacity:.5;cursor:wait}
 .pill{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .small{font-size:12px}
 a{color:var(--acc)}
+#progList input[type=text]{flex:1;width:auto}
 </style>
 </head>
 <body>
@@ -80,7 +81,20 @@ a{color:var(--acc)}
 
   <div class="card">
     <h2><span class="n">2</span>Relatori</h2>
-    <label for="names">Un nome per riga. Per aggiungere il ruolo: <b>Nome Cognome | Ruolo</b> (o incolla due colonne da Excel)</label>
+    <label for="progFile">Carica il programma (PDF, Word .docx o testo) per ricavare i nomi</label>
+    <input type="file" id="progFile" accept=".pdf,.docx,.txt,.csv">
+    <div id="progBox" style="display:none;margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b id="progTitle">Nomi trovati</b><button type="button" id="progClose" style="padding:2px 9px">✕</button></div>
+      <div class="hint">Controlla l'elenco: togli la spunta a chi non serve e correggi i nomi. Formato: Nome Cognome | Ruolo</div>
+      <div id="progList" style="max-height:260px;overflow:auto;margin:8px 0"></div>
+      <label class="chk"><input type="checkbox" id="progTitles"> Mantieni i titoli (Prof., Dott.ssa…)</label>
+      <label class="chk"><input type="checkbox" id="progRoles"> Includi i ruoli quando il programma li indica</label>
+      <div class="row c2" style="margin:8px 0 0">
+        <button type="button" id="progAdd" class="primary" style="padding:8px">Aggiungi alla lista</button>
+        <button type="button" id="progReplace" style="padding:8px">Sostituisci la lista</button>
+      </div>
+    </div>
+    <label for="names" style="margin-top:10px">Un nome per riga. Per aggiungere il ruolo: <b>Nome Cognome | Ruolo</b> (o incolla due colonne da Excel)</label>
     <textarea id="names" spellcheck="false" placeholder="Mario Rossi | Amministratore Delegato&#10;Giulia Bianchi | Direttore Marketing&#10;Luca Verdi"></textarea>
     <div class="row c2" style="margin-top:8px">
       <div><label for="lines">Disposizione del nome (a capo manuale: scrivi <b>/</b>)</label>
@@ -207,6 +221,8 @@ a{color:var(--acc)}
 
 <script src="lib/jszip.min.js"></script>
 <script src="lib/pptxgen.bundle.js"></script>
+<script src="lib/pdf.min.js"></script>
+<script src="program.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
