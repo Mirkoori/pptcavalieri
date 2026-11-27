@@ -100,7 +100,8 @@ function splitLines(name, twoLines) {
 }
 function parseNames(txt, caseMode, twoLines) {
   return txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
-    let parts = l.split(/\t|\|/).map(x => x.trim());
+    let parts = l.split(/\t|\||\s*\/\s*|\s+[-–—]\s+|;/).map(x => x.trim());
+    if (parts.length > 2) parts = [parts[0], parts.slice(1).join(' - ')];
     return { name: splitLines(applyCase(parts[0], caseMode), twoLines), role: parts[1] ? applyCase(parts[1], caseMode === 'upper' ? 'upper' : 'none') : '' };
   });
 }
