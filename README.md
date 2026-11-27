@@ -10,6 +10,8 @@ Apri `index.html` (anche offline, tutto gira nel browser):
 4. **Transizione** – dissolvenza, spingi, wipe, zoom… con direzione, velocità e avanzamento automatico.
 5. **Genera** – scarica il `.pptx` (una slide per relatore, opzionalmente con le altre slide del template).
 
+**Modelli salvati**: salvi template, stile, banner e posizioni sotto un nome (cliente/evento). Si riapre da solo l'ultimo usato; alla volta dopo basta caricare il programma e premere «Inserisci e genera subito». I modelli si possono esportare/importare per usarli su un altro PC.
+
 Il font scelto deve essere installato sul PC che apre il file.
 
 Librerie incluse in `lib/` (JSZip, PptxGenJS, pdf.js): nessuna connessione necessaria.

@@ -881,6 +881,7 @@ async function onProgram(file) {
   try {
     log('Leggo il programma…');
     const text = await window.__prog.textFromFile(file);
+    $('outName').value = 'Cavalieri - ' + file.name.replace(/\.[^.]+$/, '').replace(/^\d{4}-\d{2}-\d{2}-/, '').slice(0, 60);
     prog.entries = window.__prog.parseProgram(text);
     if (!prog.entries.length) { $('progBox').style.display = 'none'; log('Non ho trovato nomi in questo file. Prova con un altro formato o incolla i nomi a mano.', 'err'); return; }
     $('progBox').style.display = 'block'; renderProg(); log(`Programma letto: ${prog.entries.length} nomi trovati, controllali e aggiungili alla lista.`, 'ok');
@@ -932,7 +933,101 @@ document.addEventListener('DOMContentLoaded', () => {
   $('progClose').addEventListener('click', () => { $('progBox').style.display = 'none'; $('progFile').value = ''; });
   $('progAdd').addEventListener('click', () => applyProg(false));
   $('progReplace').addEventListener('click', () => applyProg(true));
+  $('progGo').addEventListener('click', async () => { applyProg(true); await onGo(); });
   ['progTitles', 'progRoles'].forEach(id => $(id).addEventListener('change', () => { prog.entries.forEach(e => delete e.edited); renderProg(); }));
+});
+
+/* ------------------------------------------------------------------ modelli salvati (IndexedDB) */
+const MODEL_IDS = SAVE_IDS.filter(i => !['names', 'outName'].includes(i));
+const MODEL_CHK = SAVE_CHK;
+let dbP = null;
+function db() {
+  if (!dbP) dbP = new Promise((res, rej) => {
+    try {
+      const rq = indexedDB.open('pptcavalieri-db', 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore('models', { keyPath: 'id' });
+      rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error);
+    } catch (e) { rej(e); }
+  });
+  return dbP;
+}
+const tx = async (mode, fn) => { const d = await db(); return new Promise((res, rej) => { const t = d.transaction('models', mode); const r = fn(t.objectStore('models')); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); }); };
+const dbAll = () => tx('readonly', s => s.getAll());
+const dbPut = m => tx('readwrite', s => s.put(m));
+const dbDel = id => tx('readwrite', s => s.delete(id));
+
+function snapshot() {
+  const s = {}; MODEL_IDS.forEach(i => s[i] = $(i).value); MODEL_CHK.forEach(i => s[i] = $(i).checked); return s;
+}
+async function refreshModels(selectId) {
+  const sel = $('modelSel'); sel.innerHTML = '<option value="">— nessun modello —</option>';
+  let list = []; try { list = (await dbAll()).sort((a, b) => b.date - a.date); } catch (e) { $('modelHint').textContent = 'Salvataggio modelli non disponibile in questo browser.'; return; }
+  for (const m of list) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; sel.appendChild(o); }
+  if (selectId) sel.value = selectId;
+}
+async function applyModel(m) {
+  for (const i of MODEL_IDS) if (m.settings[i] !== undefined) $(i).value = m.settings[i];
+  for (const i of MODEL_CHK) if (m.settings[i] !== undefined) $(i).checked = m.settings[i];
+  state.bgData = m.bgData || null;
+  if (state.thumbUrl) { URL.revokeObjectURL(state.thumbUrl); state.thumbUrl = null; }
+  if (m.tpl) {
+    state.tplBuf = m.tpl; state.tplName = m.tplName || 'template'; state.info = await inspectTemplate(m.tpl);
+    if (state.info.thumb) state.thumbUrl = URL.createObjectURL(state.info.thumb);
+    $('slideIdx').max = state.info.slides;
+  } else { state.tplBuf = null; state.info = null; state.tplName = ''; }
+  $('tplFile').value = '';
+  await updateBackdrop();
+  try { localStorage.setItem('pptcavalieri-last', m.id); } catch (e) { /* ignora */ }
+  log(`Modello "${m.name}" caricato.`, 'ok');
+}
+async function currentModel(id, name) {
+  return { id, name, date: Date.now(), settings: snapshot(), tpl: state.tplBuf, tplName: state.tplName, bgData: state.bgData };
+}
+const b64 = buf => { let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer;
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await refreshModels();
+  $('modelSel').addEventListener('change', async () => {
+    const id = $('modelSel').value; if (!id) return;
+    const m = (await dbAll()).find(x => x.id === id); if (m) await applyModel(m);
+  });
+  $('modelSave').addEventListener('click', async () => {
+    const name = (prompt('Nome del modello (es. cliente o evento):') || '').trim(); if (!name) return;
+    const id = 'm' + Date.now(); await dbPut(await currentModel(id, name)); await refreshModels(id);
+    try { localStorage.setItem('pptcavalieri-last', id); } catch (e) { /* ignora */ }
+    log(`Modello "${name}" salvato.`, 'ok');
+  });
+  $('modelUpdate').addEventListener('click', async () => {
+    const id = $('modelSel').value; if (!id) { log('Scegli prima un modello da aggiornare.', 'err'); return; }
+    const old = (await dbAll()).find(x => x.id === id); await dbPut(await currentModel(id, old.name)); log(`Modello "${old.name}" aggiornato.`, 'ok');
+  });
+  $('modelDelete').addEventListener('click', async () => {
+    const id = $('modelSel').value; if (!id) return;
+    const old = (await dbAll()).find(x => x.id === id);
+    if (!confirm(`Eliminare il modello "${old.name}"?`)) return;
+    await dbDel(id); await refreshModels(); log('Modello eliminato.');
+  });
+  $('modelExport').addEventListener('click', async () => {
+    const id = $('modelSel').value; if (!id) { log('Scegli prima un modello da esportare.', 'err'); return; }
+    const m = (await dbAll()).find(x => x.id === id);
+    const out = Object.assign({}, m, { tpl: m.tpl ? b64(m.tpl) : null });
+    download(new Blob([JSON.stringify(out)], { type: 'application/json' }), m.name.replace(/[\\/:*?"<>|]+/g, '_') + '.cavmodel');
+  });
+  $('modelImportBtn').addEventListener('click', () => $('modelImport').click());
+  $('modelImport').addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const m = JSON.parse(await f.text()); m.tpl = m.tpl ? unb64(m.tpl) : null; m.id = 'm' + Date.now(); m.date = Date.now();
+      await dbPut(m); await refreshModels(m.id); await applyModel(m);
+    } catch (err) { log('File modello non valido: ' + err.message, 'err'); }
+    e.target.value = '';
+  });
+  // riapre l'ultimo modello usato
+  try {
+    const last = localStorage.getItem('pptcavalieri-last');
+    if (last) { const m = (await dbAll()).find(x => x.id === last); if (m) { $('modelSel').value = last; await applyModel(m); } }
+  } catch (e) { /* ignora */ }
 });
 
 // per i test automatici

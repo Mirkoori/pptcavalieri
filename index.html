@@ -68,6 +68,22 @@ details.adv[open] summary{margin-bottom:8px}
 <section>
 
   <div class="card">
+    <h2>Modelli salvati</h2>
+    <div class="row c2" style="margin-bottom:8px">
+      <select id="modelSel"><option value="">— nessun modello —</option></select>
+      <button type="button" id="modelSave">Salva come nuovo…</button>
+    </div>
+    <div class="pill" style="margin:0">
+      <button type="button" id="modelUpdate" class="small">Aggiorna il modello</button>
+      <button type="button" id="modelDelete" class="small">Elimina</button>
+      <button type="button" id="modelExport" class="small">Esporta</button>
+      <button type="button" id="modelImportBtn" class="small">Importa</button>
+      <input type="file" id="modelImport" accept=".json,.cavmodel" style="display:none">
+    </div>
+    <div class="hint" id="modelHint">Un modello ricorda template, font, colori, banner e posizioni. I nomi non vengono salvati. Si riapre da solo l'ultimo usato.</div>
+  </div>
+
+  <div class="card">
     <h2><span class="n">1</span>Template</h2>
     <label for="tplFile">Template dell'agenzia o tuo (.pptx / .potx)</label>
     <input type="file" id="tplFile" accept=".pptx,.potx">
@@ -95,6 +111,7 @@ details.adv[open] summary{margin-bottom:8px}
       <div class="row c2" style="margin:8px 0 0">
         <button type="button" id="progAdd" class="primary" style="padding:8px">Aggiungi alla lista</button>
         <button type="button" id="progReplace" style="padding:8px">Sostituisci la lista</button>
+        <button type="button" id="progGo" class="primary" style="padding:8px;grid-column:1 / -1;background:var(--ok);border-color:var(--ok);color:#06210f">Inserisci e genera subito</button>
       </div>
     </div>
     <label for="names" style="margin-top:10px">Un nome per riga. Per il ruolo: <b>Nome Cognome | Ruolo</b></label>
