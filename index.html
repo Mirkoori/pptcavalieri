@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPT Cavalieri — generatore di cavalieri elettronici</title>
+<style>
+:root{
+  --bg:#101216; --panel:#181b21; --panel2:#1f232b; --line:#2b303a; --txt:#e8eaee; --mut:#8b93a1;
+  --acc:#4da3ff; --acc2:#2f7fd6; --ok:#3ecf8e; --warn:#ffb454; --err:#ff6b6b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+header{padding:14px 22px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.2px}
+header span{color:var(--mut);font-size:13px}
+main{display:grid;grid-template-columns:minmax(360px,460px) 1fr;gap:18px;padding:18px 22px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.card h2{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:var(--mut);font-weight:700;display:flex;align-items:center;gap:8px}
+.card h2 .n{background:var(--acc2);color:#fff;border-radius:50%;width:20px;height:20px;display:inline-grid;place-items:center;font-size:11px;letter-spacing:0}
+label{display:block;font-size:12px;color:var(--mut);margin:0 0 3px}
+input,select,textarea,button{font:inherit;color:var(--txt)}
+input[type=text],input[type=number],select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--acc)}
+textarea{min-height:190px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5}
+input[type=color]{width:100%;height:34px;padding:2px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+input[type=file]{width:100%;font-size:13px}
+.row{display:grid;gap:10px;margin-bottom:10px}
+.c2{grid-template-columns:1fr 1fr}.c3{grid-template-columns:1fr 1fr 1fr}.c4{grid-template-columns:repeat(4,1fr)}
+.chk{display:flex;align-items:center;gap:8px;margin:6px 0;color:var(--txt);font-size:13px;cursor:pointer}
+.chk input{width:auto}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:8px 12px}
+button:hover{border-color:var(--acc)}
+button.primary{background:var(--acc2);border-color:var(--acc2);color:#fff;font-weight:700;padding:12px 16px;font-size:15px;width:100%}
+button.primary:hover{background:var(--acc)}
+button.primary:disabled{opacity:.5;cursor:wait}
+.hint{color:var(--mut);font-size:12px;margin-top:4px}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;border:1px solid var(--line);background:var(--panel2)}
+.badge.ok{color:var(--ok);border-color:#265f48}.badge.warn{color:var(--warn);border-color:#6a5026}.badge.err{color:var(--err);border-color:#6a2a2a}
+.sticky{position:sticky;top:14px}
+#stage{position:relative;width:100%;aspect-ratio:16/9;background:#2a2f39 center/cover no-repeat;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+#ovl{position:absolute;display:flex;flex-direction:column;overflow:hidden;border:1px dashed rgba(255,255,255,.35)}
+#ovl.off{display:none}
+#ovl div{white-space:nowrap;overflow:hidden;text-overflow:clip}
+#stageNote{position:absolute;left:10px;bottom:8px;right:10px;font-size:12px;color:#fff;background:rgba(0,0,0,.55);padding:4px 8px;border-radius:6px;display:none}
+#log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--mut);white-space:pre-wrap;min-height:18px;margin-top:10px}
+.pill{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.small{font-size:12px}
+a{color:var(--acc)}
+</style>
+</head>
+<body>
+<header>
+  <h1>PPT Cavalieri</h1>
+  <span>Template + lista nomi → presentazione .pptx con una slide per relatore. Tutto resta nel tuo browser, funziona anche offline.</span>
+</header>
+
+<main>
+<section>
+
+  <div class="card">
+    <h2><span class="n">1</span>Template</h2>
+    <label for="tplFile">Template dell'agenzia o tuo (.pptx / .potx)</label>
+    <input type="file" id="tplFile" accept=".pptx,.potx">
+    <div id="tplInfo" class="pill"><span class="badge">Nessun template: userò uno sfondo semplice</span></div>
+    <div class="row c2" style="margin-top:10px">
+      <div><label for="slideIdx">Slide da usare come modello</label><input type="number" id="slideIdx" min="1" value="1"></div>
+      <div><label>&nbsp;</label><button type="button" id="btnSample" style="width:100%">Scarica template di esempio</button></div>
+    </div>
+    <div id="baseBox">
+      <div class="row c3">
+        <div><label for="bgColor">Colore sfondo</label><input type="color" id="bgColor" value="#0b1b3a"></div>
+        <div><label for="bgImg">Immagine sfondo (opz.)</label><input type="file" id="bgImg" accept="image/*"></div>
+        <div><label for="ratio">Formato</label><select id="ratio"><option value="169">16:9</option><option value="43">4:3</option></select></div>
+      </div>
+    </div>
+    <div class="hint">Nel template scrivi <b>{{NOME}}</b> e (se vuoi) <b>{{RUOLO}}</b> dove devono comparire. Se non ci sono, uso il titolo della slide; se manca anche quello, aggiungo una casella di testo.</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span>Relatori</h2>
+    <label for="names">Un nome per riga. Per aggiungere il ruolo: <b>Nome Cognome | Ruolo</b> (o incolla due colonne da Excel)</label>
+    <textarea id="names" spellcheck="false" placeholder="Mario Rossi | Amministratore Delegato&#10;Giulia Bianchi | Direttore Marketing&#10;Luca Verdi"></textarea>
+    <div class="row c2" style="margin-top:8px">
+      <div><label for="caseMode">Maiuscole</label>
+        <select id="caseMode"><option value="none">Come scritto</option><option value="upper">TUTTO MAIUSCOLO</option><option value="title">Prima Lettera Maiuscola</option></select></div>
+      <div style="align-self:end"><span class="badge" id="cnt">0 relatori</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span>Testo</h2>
+    <div class="row c2">
+      <div><label for="font">Font (deve essere installato sul PC che apre il file)</label>
+        <input type="text" id="font" list="fonts" value="Arial">
+        <datalist id="fonts">
+          <option>Arial</option><option>Arial Black</option><option>Calibri</option><option>Calibri Light</option><option>Cambria</option>
+          <option>Century Gothic</option><option>Franklin Gothic Medium</option><option>Futura</option><option>Georgia</option><option>Gill Sans MT</option>
+          <option>Helvetica Neue</option><option>Impact</option><option>Montserrat</option><option>Open Sans</option><option>Poppins</option>
+          <option>Roboto</option><option>Segoe UI</option><option>Tahoma</option><option>Times New Roman</option><option>Trebuchet MS</option><option>Verdana</option>
+          <option>Bebas Neue</option><option>Oswald</option><option>Lato</option>
+        </datalist></div>
+      <div class="row c2" style="margin:0">
+        <div><label for="size">Nome (pt)</label><input type="number" id="size" min="8" max="400" value="54"></div>
+        <div><label for="roleRatio">Ruolo (% nome)</label><input type="number" id="roleRatio" min="20" max="100" value="55"></div>
+      </div>
+    </div>
+    <div class="row c4">
+      <div><label for="color">Colore nome</label><input type="color" id="color" value="#ffffff"></div>
+      <div><label for="roleColor">Colore ruolo</label><input type="color" id="roleColor" value="#9ec8ff"></div>
+      <div><label for="align">Allineamento</label><select id="align"><option value="l">Sinistra</option><option value="ctr">Centro</option><option value="r">Destra</option></select></div>
+      <div><label for="anchor">Verticale</label><select id="anchor"><option value="t">Alto</option><option value="ctr">Centro</option><option value="b">Basso</option></select></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="bold" checked> Grassetto nome</label>
+    <label class="chk"><input type="checkbox" id="italic"> Corsivo</label>
+    <label class="chk"><input type="checkbox" id="fit" checked> Riduci automaticamente i nomi lunghi per farli stare in una riga</label>
+    <label class="chk"><input type="checkbox" id="keepStyle"> Se uso {{NOME}} o il titolo del template: mantieni font e colori del template</label>
+    <div class="hint" style="margin-top:8px">Posizione della casella (% della slide) — vale quando aggiungo una nuova casella di testo</div>
+    <div class="row c4" style="margin-top:6px">
+      <div><label for="px">X %</label><input type="number" id="px" min="0" max="100" value="6"></div>
+      <div><label for="py">Y %</label><input type="number" id="py" min="0" max="100" value="68"></div>
+      <div><label for="pw">Largh. %</label><input type="number" id="pw" min="5" max="100" value="88"></div>
+      <div><label for="ph">Alt. %</label><input type="number" id="ph" min="5" max="100" value="24"></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="forceNew"> Ignora segnaposto e titolo: usa sempre una nuova casella di testo</label>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span>Transizione</h2>
+    <div class="row c3">
+      <div><label for="trType">Tipo</label>
+        <select id="trType">
+          <option value="keep">Come nel template</option>
+          <option value="none">Nessuna</option>
+          <option value="fade">Dissolvenza</option>
+          <option value="dissolve">Dissolvi</option>
+          <option value="push">Spingi</option>
+          <option value="wipe">Cancella (wipe)</option>
+          <option value="cover">Copri</option>
+          <option value="pull">Scopri</option>
+          <option value="split">Dividi</option>
+          <option value="zoom">Zoom</option>
+          <option value="blinds">Veneziana</option>
+          <option value="checker">Scacchi</option>
+          <option value="circle">Cerchio</option>
+          <option value="diamond">Diamante</option>
+          <option value="plus">Più</option>
+          <option value="wedge">Cuneo</option>
+          <option value="wheel">Ruota</option>
+          <option value="randomBar">Barre casuali</option>
+          <option value="comb">Pettine</option>
+          <option value="newsflash">Flash</option>
+        </select></div>
+      <div><label for="trDir">Direzione</label><select id="trDir"><option value="l">Da sinistra</option><option value="r">Da destra</option><option value="u">Dal basso</option><option value="d">Dall'alto</option></select></div>
+      <div><label for="trSpd">Velocità</label><select id="trSpd"><option value="fast">Veloce</option><option value="med" selected>Media</option><option value="slow">Lenta</option></select></div>
+    </div>
+    <div class="row c2">
+      <div><label for="advSec">Avanza da solo dopo (secondi, 0 = solo a click)</label><input type="number" id="advSec" min="0" max="3600" value="0"></div>
+      <div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">5</span>Crea</h2>
+    <label class="chk"><input type="checkbox" id="keepOthers"> Mantieni anche le altre slide del template (es. apertura / chiusura)</label>
+    <div class="row c2" style="margin-top:8px"><div><label for="outName">Nome file</label><input type="text" id="outName" value="cavalieri"></div><div></div></div>
+    <button class="primary" id="go" type="button">Genera e scarica il .pptx</button>
+    <div id="log"></div>
+  </div>
+
+</section>
+
+<aside class="sticky">
+  <div class="card">
+    <h2>Anteprima (indicativa)</h2>
+    <div id="stage">
+      <div id="ovl"><div id="pvName">Mario Rossi</div><div id="pvRole">Amministratore Delegato</div></div>
+      <div id="stageNote"></div>
+    </div>
+    <div class="hint">L'anteprima mostra posizione e stile del testo sul primo nome della lista. Lo sfondo reale del template si vede solo in PowerPoint: se il file contiene una miniatura la uso qui.</div>
+  </div>
+</aside>
+</main>
+
+<script src="lib/jszip.min.js"></script>
+<script src="lib/pptxgen.bundle.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
