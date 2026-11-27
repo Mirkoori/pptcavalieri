@@ -76,9 +76,10 @@ async function inspectTemplate(buf) {
 
 /* ------------------------------------------------------------------ misura testo (per ridurre i nomi lunghi) */
 const _cv = document.createElement('canvas').getContext('2d');
+let SPC = 0;
 function textWidthPt(text, font, sizePt, bold, italic) {
   _cv.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${sizePt}px "${font}", Arial, sans-serif`;
-  return Math.max(...String(text).split('\n').map(l => _cv.measureText(l).width));
+  return Math.max(...String(text).split('\n').map(l => _cv.measureText(l).width + SPC * l.length));
 }
 function fitSize(text, font, sizePt, bold, italic, boxWidthPt) {
   if (!boxWidthPt) return sizePt;
@@ -113,6 +114,7 @@ function styleRun(doc, r, o) {
   rPr.setAttribute('sz', String(Math.round(o.size * 100)));
   rPr.setAttribute('b', o.bold ? '1' : '0');
   rPr.setAttribute('i', o.italic ? '1' : '0');
+  if (o.spc) rPr.setAttribute('spc', String(Math.round(o.spc * 100))); else rPr.removeAttribute('spc');
   for (const n of ['solidFill', 'gradFill', 'noFill', 'latin', 'ea', 'cs']) kids(rPr, NS_A, n).forEach(k => rPr.removeChild(k));
   const fill = doc.createElementNS(NS_A, 'a:solidFill');
   const clr = doc.createElementNS(NS_A, 'a:srgbClr'); clr.setAttribute('val', o.color.replace('#', '').toUpperCase());
@@ -171,7 +173,7 @@ function maxId(doc) {
 
 function textboxXml(id, label, o, xEmu, yEmu, wEmu, hEmu, paras) {
   const pXml = paras.map(p => {
-    const pr = `<a:rPr lang="it-IT" sz="${Math.round(p.size * 100)}" b="${p.bold ? 1 : 0}" i="${p.italic ? 1 : 0}" dirty="0"><a:solidFill><a:srgbClr val="${p.color.replace('#', '').toUpperCase()}"/></a:solidFill><a:latin typeface="${esc(o.font)}"/><a:ea typeface="${esc(o.font)}"/><a:cs typeface="${esc(o.font)}"/></a:rPr>`;
+    const pr = `<a:rPr lang="it-IT" sz="${Math.round(p.size * 100)}" b="${p.bold ? 1 : 0}" i="${p.italic ? 1 : 0}"${p.spc ? ` spc="${Math.round(p.spc * 100)}"` : ""} dirty="0"><a:solidFill><a:srgbClr val="${p.color.replace('#', '').toUpperCase()}"/></a:solidFill><a:latin typeface="${esc(o.font)}"/><a:ea typeface="${esc(o.font)}"/><a:cs typeface="${esc(o.font)}"/></a:rPr>`;
     const runs = String(p.text).split('\n').map(l => `<a:r>${pr}<a:t>${esc(l)}</a:t></a:r>`).join(`<a:br>${pr}</a:br>`);
     return `<a:p><a:pPr algn="${o.align}"/>${runs}</a:p>`;
   }).join('');
@@ -458,9 +460,9 @@ function applyTransition(doc, o) {
 function transformSlide(xml, person, o, slideW, slideH) {
   const doc = parseXml(xml);
   const stats = { ph: 0, title: 0, box: 0 };
-  const nameOpts = { font: o.font, size: o.size, bold: o.bold, italic: o.italic, color: o.color };
+  const nameOpts = { font: o.font, size: o.size, bold: o.bold, italic: o.italic, color: o.color, spc: o.spc };
   const ratio = Math.min(o.roleRatio, 85) / 100; // il ruolo è sempre più piccolo del nome
-  const roleOpts = { font: o.font, size: Math.round(o.size * ratio), bold: false, italic: o.italic, color: o.roleColor };
+  const roleOpts = { font: o.font, size: Math.round(o.size * ratio), bold: false, italic: o.italic, color: o.roleColor, spc: o.spc };
 
   const nameSize = (box) => o.fit ? fitSize(person.name, o.font, o.size, o.bold, o.italic, box) : o.size;
   const roleSize = (box, nameSz) => {
@@ -728,7 +730,7 @@ function readOpts() {
   const o = {
     slideIdx: Math.round(n('slideIdx', 1)),
     font: $('font').value.trim() || 'Arial',
-    size: n('size', 54), roleRatio: n('roleRatio', 55),
+    spc: n('spc', 0), size: n('size', 54), roleRatio: n('roleRatio', 55),
     color: $('color').value, roleColor: $('roleColor').value,
     align: $('align').value, anchor: $('anchor').value,
     bold: $('bold').checked, italic: $('italic').checked, fit: $('fit').checked,
@@ -742,6 +744,7 @@ function readOpts() {
     const r = bannerRect(o);
     Object.assign(o, { forceNew: true, px: r.x + 3, pw: r.w - 6, py: r.y, ph: r.h, anchor: 'ctr' });
   }
+  SPC = o.spc || 0;
   return o;
 }
 
@@ -821,13 +824,13 @@ function refreshUi() {
     const nsz = o.fit ? fitSize(sample.name, o.font, o.size, o.bold, o.italic, stage.clientWidth / k * o.pw / 100) : o.size;
     const rsz0 = nsz * Math.min(o.roleRatio, 85) / 100;
     const rsz = o.fit && sample.role ? fitSize(sample.role, o.font, rsz0, false, o.italic, stage.clientWidth / k * o.pw / 100) : rsz0;
-    Object.assign(n.style, { fontFamily: `"${o.font}", Arial, sans-serif`, fontSize: nsz * k + 'px', fontWeight: o.bold ? 700 : 400, fontStyle: o.italic ? 'italic' : 'normal', color: o.color, lineHeight: 1.2 });
-    Object.assign(r.style, { fontFamily: `"${o.font}", Arial, sans-serif`, fontSize: rsz * k + 'px', fontWeight: 400, fontStyle: o.italic ? 'italic' : 'normal', color: o.roleColor, lineHeight: 1.2 });
+    Object.assign(n.style, { fontFamily: `"${o.font}", Arial, sans-serif`, fontSize: nsz * k + 'px', fontWeight: o.bold ? 700 : 400, fontStyle: o.italic ? 'italic' : 'normal', color: o.color, lineHeight: 1.2, letterSpacing: (o.spc || 0) * k + 'px' });
+    Object.assign(r.style, { fontFamily: `"${o.font}", Arial, sans-serif`, fontSize: rsz * k + 'px', fontWeight: 400, fontStyle: o.italic ? 'italic' : 'normal', color: o.roleColor, lineHeight: 1.2, letterSpacing: (o.spc || 0) * k + 'px' });
   }
   save();
 }
 
-const SAVE_IDS = ['bgMode', 'plainColor', 'lines', 'place', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
+const SAVE_IDS = ['bgMode', 'plainColor', 'lines', 'place', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'spc', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
 const SAVE_CHK = ['bnAuto', 'bold', 'italic', 'fit', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
 function save() {
   try {

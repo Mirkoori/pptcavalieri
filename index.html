@@ -136,14 +136,10 @@ details.adv[open] summary{margin-bottom:8px}
     <div class="row c2">
       <div><label for="place">Dove va il testo</label>
         <select id="place"><option value="free">Lo trascino io nell'anteprima</option><option value="tpl">Come nel template (segnaposto o titolo)</option></select></div>
-      <div><label for="font">Font (installato sul PC che apre il file)</label>
+      <div><label for="font">Font (scrivi o scegli dalla lista; deve essere installato sul PC che apre il file)</label>
         <input type="text" id="font" list="fonts" value="Arial">
         <datalist id="fonts">
-          <option>Arial</option><option>Arial Black</option><option>Calibri</option><option>Calibri Light</option><option>Cambria</option>
-          <option>Century Gothic</option><option>Franklin Gothic Medium</option><option>Futura</option><option>Georgia</option><option>Gill Sans MT</option>
-          <option>Helvetica Neue</option><option>Impact</option><option>Montserrat</option><option>Open Sans</option><option>Poppins</option>
-          <option>Roboto</option><option>Segoe UI</option><option>Tahoma</option><option>Times New Roman</option><option>Trebuchet MS</option><option>Verdana</option>
-          <option>Bebas Neue</option><option>Oswald</option><option>Lato</option>
+          <option>Arial</option><option>Arial Black</option><option>Arial Narrow</option><option>Avenir Next</option><option>Baskerville</option><option>Bahnschrift</option><option>Book Antiqua</option><option>Calibri</option><option>Calibri Light</option><option>Cambria</option><option>Candara</option><option>Century Gothic</option><option>Consolas</option><option>Constantia</option><option>Corbel</option><option>Didot</option><option>Franklin Gothic Medium</option><option>Futura</option><option>Garamond</option><option>Georgia</option><option>Gill Sans MT</option><option>Helvetica</option><option>Helvetica Neue</option><option>Impact</option><option>Lucida Sans</option><option>Palatino Linotype</option><option>Rockwell</option><option>Segoe UI</option><option>Segoe UI Black</option><option>Segoe UI Light</option><option>Tahoma</option><option>Times New Roman</option><option>Trebuchet MS</option><option>Verdana</option><option>Bebas Neue</option><option>Montserrat</option><option>Montserrat Black</option><option>Oswald</option><option>Open Sans</option><option>Lato</option><option>Poppins</option><option>Roboto</option><option>Roboto Condensed</option><option>Raleway</option><option>Playfair Display</option><option>Source Sans Pro</option><option>Nunito</option><option>Inter</option><option>Anton</option><option>Archivo Black</option>
         </datalist></div>
     </div>
     <div class="row c4">
@@ -152,6 +148,7 @@ details.adv[open] summary{margin-bottom:8px}
       <div><label for="align">Allineamento</label><select id="align"><option value="l">Sinistra</option><option value="ctr" selected>Centro</option><option value="r">Destra</option></select></div>
       <div style="align-self:end"><label class="chk"><input type="checkbox" id="bold" checked> Grassetto</label></div>
     </div>
+    <div class="row c4"><div><label for="spc">Spaziatura lettere (pt)</label><input type="number" id="spc" value="0" min="-5" max="40" step="0.5"></div><div></div><div></div><div></div></div>
     <div class="hint">Con "Lo trascino io": trascina il testo nell'anteprima, l'angolo azzurro lo ridimensiona.</div>
     <details class="adv"><summary>Altre opzioni testo</summary>
       <div class="row c3">
