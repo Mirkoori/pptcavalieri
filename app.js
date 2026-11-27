@@ -830,7 +830,7 @@ function refreshUi() {
   save();
 }
 
-const SAVE_IDS = ['bgMode', 'plainColor', 'lines', 'place', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'spc', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
+const SAVE_IDS = ['bgMode', 'plainColor', 'lines', 'place', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'spc', 'feather', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
 const SAVE_CHK = ['bnAuto', 'bold', 'italic', 'fit', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
 function save() {
   try {
@@ -1029,12 +1029,17 @@ async function applyModel(m) {
     $('slideIdx').max = state.info.slides;
   } else { state.tplBuf = null; state.info = null; state.tplName = ''; }
   $('tplFile').value = '';
-  await updateBackdrop();
+  state.decos.forEach(d => d.url && URL.revokeObjectURL(d.url));
+  state.decos = (m.decos || []).map(d => Object.assign({ id: 'd' + Math.random().toString(36).slice(2) }, d));
+  for (const d of state.decos) await rebuildDeco(d);
+  state.bgTouched = true; renderDecos();
+  await updateBackdrop(); loadPicStrip();
   try { localStorage.setItem('pptcavalieri-last', m.id); } catch (e) { /* ignora */ }
   log(`Modello "${m.name}" caricato.`, 'ok');
 }
 async function currentModel(id, name) {
-  return { id, name, date: Date.now(), settings: snapshot(), tpl: state.tplBuf, tplName: state.tplName, bgData: state.bgData };
+  return { id, name, date: Date.now(), settings: snapshot(), tpl: state.tplBuf, tplName: state.tplName, bgData: state.bgData,
+    decos: state.decos.map(d => ({ src: d.src, crop: d.crop, ar: d.ar, x: d.x, y: d.y, w: d.w, h: d.h, label: d.label })) };
 }
 const b64 = buf => { let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer;
@@ -1064,14 +1069,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('modelExport').addEventListener('click', async () => {
     const id = $('modelSel').value; if (!id) { log('Scegli prima un modello da esportare.', 'err'); return; }
     const m = (await dbAll()).find(x => x.id === id);
-    const out = Object.assign({}, m, { tpl: m.tpl ? b64(m.tpl) : null });
+    const out = Object.assign({}, m, { tpl: m.tpl ? b64(m.tpl) : null, decos: (m.decos || []).map(d => Object.assign({}, d, { src: b64(d.src) })) });
     download(new Blob([JSON.stringify(out)], { type: 'application/json' }), m.name.replace(/[\\/:*?"<>|]+/g, '_') + '.cavmodel');
   });
   $('modelImportBtn').addEventListener('click', () => $('modelImport').click());
   $('modelImport').addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
     try {
-      const m = JSON.parse(await f.text()); m.tpl = m.tpl ? unb64(m.tpl) : null; m.id = 'm' + Date.now(); m.date = Date.now();
+      const m = JSON.parse(await f.text()); m.tpl = m.tpl ? unb64(m.tpl) : null; m.decos = (m.decos || []).map(d => Object.assign({}, d, { src: unb64(d.src) })); m.id = 'm' + Date.now(); m.date = Date.now();
       await dbPut(m); await refreshModels(m.id); await applyModel(m);
     } catch (err) { log('File modello non valido: ' + err.message, 'err'); }
     e.target.value = '';
@@ -1096,9 +1101,27 @@ async function hiBackdrop() {
 const slideAsp = () => state.info ? state.info.cx / state.info.cy : ({ '43': 4 / 3, '916': 9 / 16 }[$('ratio').value] || 16 / 9);
 const canvasToBuf = cv => new Promise(res => cv.toBlob(async b => res(await b.arrayBuffer()), 'image/png'));
 
-async function addDecoFromCanvas(cv, rect, label) {
-  const buf = await canvasToBuf(cv);
-  const d = { id: 'd' + Date.now() + Math.random().toString(36).slice(2, 6), buf, url: URL.createObjectURL(new Blob([buf], { type: 'image/png' })), ar: cv.width / cv.height, x: rect.x, y: rect.y, w: rect.w, h: rect.h, label };
+async function featherBuf(src, pct) {
+  const bmp = await createImageBitmap(new Blob([src], { type: 'image/png' }));
+  const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height;
+  const c = cv.getContext('2d'); c.drawImage(bmp, 0, 0);
+  const f = Math.min(cv.width, cv.height) * pct / 100; if (f < 1) return src;
+  c.globalCompositeOperation = 'destination-in';
+  // ogni lato: opaco oltre la distanza f, trasparente sul bordo (le 4 passate si moltiplicano)
+  const side = (x0, y0, x1, y1, d) => { const g = c.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(d, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,1)'); c.fillStyle = g; c.fillRect(0, 0, cv.width, cv.height); };
+  side(0, 0, cv.width, 0, f / cv.width); side(cv.width, 0, 0, 0, f / cv.width);
+  side(0, 0, 0, cv.height, f / cv.height); side(0, cv.height, 0, 0, f / cv.height);
+  return canvasToBuf(cv);
+}
+async function rebuildDeco(d) {
+  d.buf = d.crop && parseFloat($('feather').value) > 0 ? await featherBuf(d.src, parseFloat($('feather').value)) : d.src;
+  if (d.url) URL.revokeObjectURL(d.url);
+  d.url = URL.createObjectURL(new Blob([d.buf], { type: 'image/png' }));
+}
+async function addDecoFromCanvas(cv, rect, label, crop) {
+  const src = await canvasToBuf(cv);
+  const d = { id: 'd' + Date.now() + Math.random().toString(36).slice(2, 6), src, crop: !!crop, ar: cv.width / cv.height, x: rect.x, y: rect.y, w: rect.w, h: rect.h, label };
+  await rebuildDeco(d);
   state.decos.push(d);
   if (!state.bgTouched && $('bgMode').value !== 'plain') { $('bgMode').value = 'plain'; $('place').value = 'free'; $('py').value = 38; await updateBackdrop(); }
   renderDecos(); refreshUi();
@@ -1110,7 +1133,7 @@ async function cropRect(rect, label) {
   const sw = Math.max(4, Math.round(cv.width * rect.w / 100)), sh = Math.max(4, Math.round(cv.height * rect.h / 100));
   const out = document.createElement('canvas'); out.width = sw; out.height = sh;
   out.getContext('2d').drawImage(cv, sx, sy, sw, sh, 0, 0, sw, sh);
-  await addDecoFromCanvas(out, rect, label);
+  await addDecoFromCanvas(out, rect, label, true);
 }
 function presetRect(k) {
   const asp = slideAsp(), cw = 22, ch = Math.min(45, 22 * asp); // angoli quasi quadrati
@@ -1159,7 +1182,7 @@ async function loadPicStrip() {
   if (!pics.length) { box.innerHTML = '<span class="hint">Nessuna immagine staccabile (la grafica è un\'unica immagine): usa i ritagli qui sotto</span>'; return; }
   for (const p of pics) {
     const im = document.createElement('img'); im.className = 'thumb'; im.src = p.cv.toDataURL('image/png'); im.title = p.name + ' — clicca per aggiungere';
-    im.addEventListener('click', () => addDecoFromCanvas(p.cv, p.rect, p.name));
+    im.addEventListener('click', () => addDecoFromCanvas(p.cv, p.rect, p.name, false));
     box.appendChild(im);
   }
 }
@@ -1202,6 +1225,7 @@ async function extractPics(buf, idx) {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-crop]').forEach(b => b.addEventListener('click', () => cropRect(presetRect(b.dataset.crop), b.textContent.trim())));
+  $('feather').addEventListener('input', async () => { for (const d of state.decos) await rebuildDeco(d); renderDecos(); refreshUi(); });
   $('plainColor').addEventListener('input', () => { state.plainTouched = true; });
   $('bgMode').addEventListener('change', () => { state.bgTouched = true; if ($('bgMode').value === 'plain') $('place').value = 'free'; refreshUi(); });
   // ritaglio col mouse
