@@ -18,7 +18,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(
 const log = (m, cls) => { $('log').textContent = m; $('log').style.color = cls === 'err' ? 'var(--err)' : cls === 'ok' ? 'var(--ok)' : 'var(--mut)'; };
 
 /* ------------------------------------------------------------------ stato */
-const state = { tplBuf: null, tplName: '', info: null, thumbUrl: null, bgData: null };
+const state = { decos: [], tplBuf: null, tplName: '', info: null, thumbUrl: null, bgData: null };
 
 /* ------------------------------------------------------------------ helpers XML */
 function parseXml(s) {
@@ -194,19 +194,19 @@ function resolvePath(base, t) {
   for (const p of parts) { if (p === '..') out.pop(); else if (p !== '.') out.push(p); }
   return out.join('/');
 }
-async function canvasFromBlob(blob, aspect) {
+async function canvasFromBlob(blob, aspect, width) {
   const bmp = await createImageBitmap(blob);
-  const W = 240, H = Math.max(40, Math.round(W / aspect));
+  const W = width || 240, H = Math.max(40, Math.round(W / aspect));
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   cv.getContext('2d', { willReadFrequently: true }).drawImage(bmp, 0, 0, W, H);
   return cv;
 }
-async function loadBackdrop(buf, idx) {
+async function loadBackdrop(buf, idx, width) {
   const zip = await JSZip.loadAsync(buf);
   const deck = await readDeck(zip);
   const s = deck.slides[Math.min(Math.max(idx, 1), deck.slides.length) - 1];
   const aspect = deck.cx / deck.cy;
-  const W = 240, H = Math.max(40, Math.round(W / aspect));
+  const W = width || 240, H = Math.max(40, Math.round(W / aspect));
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d', { willReadFrequently: true });
   const readRels = async path => { const f = zip.file(relsPathOf(path)); return f ? Array.from(parseXml(await f.async('string')).getElementsByTagNameNS(NS_REL, 'Relationship')) : []; };
@@ -334,6 +334,7 @@ function withText(c, line) { // banner = colore dello sfondo; testo scuro su sfo
 }
 function autoColors() {
   const bd = state.backdrop; if (!bd) return null;
+  if ($('bgMode').value === 'plain') return withText(hex2rgb($('plainColor').value), bd.accent ? rgb2hex(bd.accent) : null);
   if (bd.solid) return withText(hex2rgb(bd.solid), null);
   const r = bannerRect({ bnX: +$('bnX').value, bnY: +$('bnY').value, bnW: +$('bnW').value, bnH: +$('bnH').value });
   const dom = binsOf(bd.canvas, r)[0];
@@ -349,7 +350,7 @@ async function updateBackdrop() {
     } else state.backdrop = { solid: $('bgColor').value };
   } catch (e) { console.warn('sfondo non leggibile', e); state.backdrop = null; }
   const bd = state.backdrop;
-  if (bd && bd.canvas) { const p = palette(bd.canvas); bd.accent = p.accent; bd.palette = p.colors; bd.url = bd.canvas.toDataURL('image/jpeg', 0.7); }
+  if (bd && bd.canvas) { const dm = binsOf(bd.canvas, { x: 0, y: 0, w: 100, h: 100 })[0]; if (dm && !state.plainTouched) $('plainColor').value = rgb2hex(dm.c); const p = palette(bd.canvas); bd.accent = p.accent; bd.palette = p.colors; bd.url = bd.canvas.toDataURL('image/jpeg', 0.7); }
   const box = $('palette'); box.innerHTML = '';
   if (bd && bd.palette) for (const c of bd.palette) {
     const b = document.createElement('button'); b.type = 'button'; b.title = rgb2hex(c);
@@ -358,6 +359,19 @@ async function updateBackdrop() {
     box.appendChild(b);
   }
   refreshUi();
+}
+
+/* ------------------------------------------------------------------ abbellimenti: scrittura nel pptx */
+function addDecos(doc, o, W, H) {
+  const spTree = doc.getElementsByTagNameNS(NS_P, 'spTree')[0];
+  const gp = firstKid(spTree, NS_P, 'grpSpPr');
+  let id = maxId(doc) + 1;
+  o.decos.forEach((d, i) => {
+    const xml = `<p:pic xmlns:p="${NS_P}" xmlns:a="${NS_A}" xmlns:r="${NS_R}"><p:nvPicPr><p:cNvPr id="${id++}" name="Abbellimento ${i + 1}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>` +
+      `<p:blipFill><a:blip r:embed="${o.decoRids[i]}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
+      `<p:spPr><a:xfrm><a:off x="${Math.round(W * d.x / 100)}" y="${Math.round(H * d.y / 100)}"/><a:ext cx="${Math.round(W * d.w / 100)}" cy="${Math.round(H * d.h / 100)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+    spTree.insertBefore(doc.importNode(parseXml(xml).documentElement, true), gp ? gp.nextSibling : spTree.firstChild);
+  });
 }
 
 /* ------------------------------------------------------------------ banner */
@@ -454,6 +468,16 @@ function transformSlide(xml, person, o, slideW, slideH) {
   };
   const tplSize = p => { const r = Array.from(p.getElementsByTagNameNS(NS_A, 'rPr')).find(x => x.getAttribute('sz')); return r ? +r.getAttribute('sz') / 100 : null; };
   const setSize = (p, pt) => { const r = kids(p, NS_A, 'r')[0]; if (!r) return; let rp = firstKid(r, NS_A, 'rPr'); if (!rp) { rp = doc.createElementNS(NS_A, 'a:rPr'); r.insertBefore(rp, r.firstChild); } rp.setAttribute('sz', String(Math.round(pt * 100))); };
+
+  if (o.bgMode === 'plain') { // sfondo tinta unita: via immagini, layout e master nascosti
+    for (const pic of Array.from(doc.getElementsByTagNameNS(NS_P, 'pic'))) pic.parentNode.removeChild(pic);
+    const cSld = doc.getElementsByTagNameNS(NS_P, 'cSld')[0];
+    const oldBg = firstKid(cSld, NS_P, 'bg'); if (oldBg) cSld.removeChild(oldBg);
+    const bgx = parseXml(`<p:bg xmlns:p="${NS_P}" xmlns:a="${NS_A}"><p:bgPr><a:solidFill><a:srgbClr val="${o.plainColor.replace('#', '').toUpperCase()}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>`).documentElement;
+    cSld.insertBefore(doc.importNode(bgx, true), cSld.firstChild);
+    doc.documentElement.setAttribute('showMasterSp', '0');
+  }
+  if (o.decos && o.decos.length && o.decoRids) addDecos(doc, o, slideW, slideH);
 
   if (o.stripText) {
     const keepTitle = !o.forceNew;
@@ -594,14 +618,26 @@ async function buildDeck(buf, people, o) {
   const newRid = () => { let r; do { r = 'rIdCav' + (ridN++); } while (usedRid.has(r)); usedRid.add(r); return r; };
 
   // pulisci le relazioni della slide modello (note e commenti non vanno duplicati)
+  const decos = o.decos || [];
   let cleanRels = tplRels;
   if (tplRels) {
     const rd = parseXml(tplRels);
     for (const r of Array.from(rd.getElementsByTagNameNS(NS_REL, 'Relationship'))) {
       if (/notesSlide$|comments/i.test(r.getAttribute('Type'))) r.parentNode.removeChild(r);
     }
+    decos.forEach((d, i) => {
+      const r = rd.createElementNS(NS_REL, 'Relationship');
+      r.setAttribute('Id', 'rIdCavDeco' + i); r.setAttribute('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image'); r.setAttribute('Target', `../media/cav_deco${i}.png`);
+      rd.documentElement.appendChild(r);
+    });
     cleanRels = ser(rd);
   }
+  decos.forEach((d, i) => zip.file(`ppt/media/cav_deco${i}.png`, d.buf));
+  if (decos.length && !Array.from(ctDoc.getElementsByTagNameNS(NS_CT, 'Default')).some(x => (x.getAttribute('Extension') || '').toLowerCase() === 'png')) {
+    const df = ctDoc.createElementNS(NS_CT, 'Default'); df.setAttribute('Extension', 'png'); df.setAttribute('ContentType', 'image/png');
+    ctDoc.documentElement.insertBefore(df, ctDoc.documentElement.firstChild);
+  }
+  o = Object.assign({}, o, { decoRids: decos.map((d, i) => 'rIdCavDeco' + i) });
 
   const created = [];
   const totals = { ph: 0, title: 0, box: 0 };
@@ -647,6 +683,17 @@ async function buildDeck(buf, people, o) {
     if (ov.getAttribute('ContentType') === CT_POTX) ov.setAttribute('ContentType', CT_PRES);
   }
 
+  // elimina le immagini non più usate (con lo sfondo tinta unita il file resta leggero)
+  if (o.bgMode === 'plain') {
+    const used = new Set();
+    for (const p of Object.keys(zip.files).filter(n => n.endsWith('.rels'))) {
+      const base = p.replace(/_rels\/[^/]+\.rels$/, '');
+      for (const r of Array.from(parseXml(await zip.file(p).async('string')).getElementsByTagNameNS(NS_REL, 'Relationship')))
+        if (/\/image$/.test(r.getAttribute('Type'))) used.add(resolvePath(base, r.getAttribute('Target')));
+    }
+    for (const n of Object.keys(zip.files)) if (/^ppt\/media\//.test(n) && !zip.files[n].dir && !used.has(n)) zip.remove(n);
+  }
+
   zip.file('ppt/presentation.xml', ser(presDoc));
   zip.file('ppt/_rels/presentation.xml.rels', ser(relsDoc));
   zip.file('[Content_Types].xml', ser(ctDoc));
@@ -688,7 +735,7 @@ function readOpts() {
     px: n('px', 6), py: n('py', 68), pw: n('pw', 88), ph: n('ph', 24),
     trType: $('trType').value, trDir: $('trDir').value, trSpd: $('trSpd').value, advSec: n('advSec', 0),
     twoLines: $('lines').value === '2', keepOthers: $('keepOthers').checked, stripText: $('stripText').checked,
-    bnOn: $('bnOn').checked, bnColor: $('bnColor').value, bnOpacity: n('bnOpacity', 90), bnX: n('bnX', 0), bnY: n('bnY', 78), bnW: n('bnW', 100), bnH: n('bnH', 20), bnLinePos: $('bnLinePos').value, bnLine: $('bnLine').checked, bnLineColor: $('bnLineColor').value, caseMode: $('caseMode').value
+    bgMode: $('bgMode').value, plainColor: $('plainColor').value, decos: state.decos, bnOn: $('bnOn').checked, bnColor: $('bnColor').value, bnOpacity: n('bnOpacity', 90), bnX: n('bnX', 0), bnY: n('bnY', 78), bnW: n('bnW', 100), bnH: n('bnH', 20), bnLinePos: $('bnLinePos').value, bnLine: $('bnLine').checked, bnLineColor: $('bnLineColor').value, caseMode: $('caseMode').value
   };
   if (o.bnOn) { // il testo va dentro il banner
     const r = bannerRect(o);
@@ -751,6 +798,7 @@ function refreshUi() {
     Object.assign(bn.style, { display: 'block', left: r.x + '%', top: r.y + '%', width: r.w + '%', height: r.h + '%', background: o.bnColor, opacity: o.bnOpacity / 100 });
     Object.assign(bl.style, { display: o.bnLine ? 'block' : 'none', left: r.x + '%', width: r.w + '%', height: '0.8%', background: o.bnLineColor, top: (o.bnLinePos === 'below' ? r.y + r.h : r.y - 0.8) + '%' });
   } else { bn.style.display = 'none'; bl.style.display = 'none'; }
+  if (o.bgMode === 'plain') { stage.style.backgroundImage = 'none'; stage.style.backgroundColor = o.plainColor; }
   const sample = people[0] || { name: 'Mario Rossi', role: 'Amministratore Delegato' };
   const slideWpt = state.info ? state.info.cx / EMU_PT : (rr === '43' ? 720 : rr === '916' ? 405 : 960);
   const k = stage.clientWidth / slideWpt;
@@ -778,7 +826,7 @@ function refreshUi() {
   save();
 }
 
-const SAVE_IDS = ['lines', 'place', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
+const SAVE_IDS = ['bgMode', 'plainColor', 'lines', 'place', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
 const SAVE_CHK = ['bnAuto', 'bold', 'italic', 'fit', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
 function save() {
   try {
@@ -816,7 +864,8 @@ async function onTemplate(file) {
     state.tplBuf = null; state.info = null; $('tplFile').value = '';
     log('Impossibile leggere il template: ' + e.message, 'err');
   }
-  await updateBackdrop();
+  state.decos.forEach(d => URL.revokeObjectURL(d.url)); state.decos = []; renderDecos(); state.plainTouched = false;
+  await updateBackdrop(); loadPicStrip();
 }
 
 async function onGo() {
@@ -1028,6 +1077,142 @@ document.addEventListener('DOMContentLoaded', async () => {
     const last = localStorage.getItem('pptcavalieri-last');
     if (last) { const m = (await dbAll()).find(x => x.id === last); if (m) { $('modelSel').value = last; await applyModel(m); } }
   } catch (e) { /* ignora */ }
+});
+
+/* ------------------------------------------------------------------ abbellimenti: ritagli e posizionamento */
+let hiCache = { key: '', cv: null };
+async function hiBackdrop() {
+  const key = (state.tplBuf ? state.tplName + $('slideIdx').value : 'bg') + (state.bgData ? 'i' : '');
+  if (hiCache.key === key && hiCache.cv) return hiCache.cv;
+  let cv = null;
+  if (state.tplBuf) { const bd = await loadBackdrop(state.tplBuf, Math.round(parseFloat($('slideIdx').value) || 1), 1600); cv = bd && bd.canvas; }
+  else if (state.bgData) { const r = $('ratio').value; cv = await canvasFromBlob(await (await fetch('data:' + state.bgData)).blob(), r === '43' ? 4 / 3 : r === '916' ? 9 / 16 : 16 / 9, 1600); }
+  hiCache = { key, cv }; return cv;
+}
+const slideAsp = () => state.info ? state.info.cx / state.info.cy : ({ '43': 4 / 3, '916': 9 / 16 }[$('ratio').value] || 16 / 9);
+const canvasToBuf = cv => new Promise(res => cv.toBlob(async b => res(await b.arrayBuffer()), 'image/png'));
+
+async function addDecoFromCanvas(cv, rect, label) {
+  const buf = await canvasToBuf(cv);
+  const d = { id: 'd' + Date.now() + Math.random().toString(36).slice(2, 6), buf, url: URL.createObjectURL(new Blob([buf], { type: 'image/png' })), ar: cv.width / cv.height, x: rect.x, y: rect.y, w: rect.w, h: rect.h, label };
+  state.decos.push(d); renderDecos(); refreshUi();
+}
+async function cropRect(rect, label) {
+  const cv = await hiBackdrop();
+  if (!cv) { log('Carica prima un template o un\'immagine di sfondo.', 'err'); return; }
+  const sx = Math.round(cv.width * rect.x / 100), sy = Math.round(cv.height * rect.y / 100);
+  const sw = Math.max(4, Math.round(cv.width * rect.w / 100)), sh = Math.max(4, Math.round(cv.height * rect.h / 100));
+  const out = document.createElement('canvas'); out.width = sw; out.height = sh;
+  out.getContext('2d').drawImage(cv, sx, sy, sw, sh, 0, 0, sw, sh);
+  await addDecoFromCanvas(out, rect, label);
+}
+function presetRect(k) {
+  const asp = slideAsp(), cw = 22, ch = Math.min(45, 22 * asp); // angoli quasi quadrati
+  return { top: { x: 0, y: 0, w: 100, h: 16 }, bottom: { x: 0, y: 84, w: 100, h: 16 },
+    tl: { x: 0, y: 0, w: cw, h: ch }, tr: { x: 100 - cw, y: 0, w: cw, h: ch }, bl: { x: 0, y: 100 - ch, w: cw, h: ch }, br: { x: 100 - cw, y: 100 - ch, w: cw, h: ch } }[k];
+}
+
+function renderDecos() {
+  const layer = $('decoLayer'); layer.innerHTML = '';
+  state.decos.forEach(d => {
+    const el = document.createElement('div'); el.className = 'deco'; el.style.pointerEvents = 'auto';
+    const place = () => Object.assign(el.style, { left: d.x + '%', top: d.y + '%', width: d.w + '%', height: d.h + '%' });
+    place();
+    const img = document.createElement('img'); img.src = d.url; el.appendChild(img);
+    const x = document.createElement('div'); x.className = 'x'; x.textContent = '×'; x.title = 'Rimuovi';
+    x.addEventListener('pointerdown', e => { e.stopPropagation(); });
+    x.addEventListener('click', e => { e.stopPropagation(); state.decos = state.decos.filter(z => z !== d); renderDecos(); refreshUi(); });
+    el.appendChild(x);
+    const hd = document.createElement('div'); hd.className = 'hdl'; el.appendChild(hd);
+    let dr = null;
+    const pos = e => { const r = $('stage').getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * 100, y: (e.clientY - r.top) / r.height * 100, sw: r.width, sh: r.height }; };
+    el.addEventListener('pointerdown', e => {
+      if (e.target === x) return;
+      dr = { mode: e.target === hd ? 'size' : 'move', p: pos(e), x: d.x, y: d.y, w: d.w, h: d.h };
+      (e.target === hd ? hd : el).setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+    });
+    el.addEventListener('pointermove', e => {
+      if (!dr) return;
+      const p = pos(e), dx = p.x - dr.p.x, dy = p.y - dr.p.y;
+      if (dr.mode === 'move') { d.x = r05(clamp(dr.x + dx, -50, 100 - 2)); d.y = r05(clamp(dr.y + dy, -50, 100 - 2)); }
+      else { d.w = clamp(dr.w + dx, 2, 150); d.h = d.w * (p.sw / p.sh) / d.ar; }
+      place(); refreshUi();
+    });
+    const end = () => { dr = null; };
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    layer.appendChild(el);
+  });
+  $('decoCount').textContent = state.decos.length ? `${state.decos.length} abbellimenti: trascinali nell'anteprima, l'angolo azzurro li ridimensiona, × li toglie.` : 'Nessun abbellimento aggiunto.';
+}
+
+async function loadPicStrip() {
+  const box = $('picStrip'); box.innerHTML = '';
+  if (!state.tplBuf) { box.innerHTML = '<span class="hint">Carica un template per vederle (oppure usa i ritagli qui sotto)</span>'; return; }
+  let pics = [];
+  try { pics = await extractPics(state.tplBuf, Math.round(parseFloat($('slideIdx').value) || 1)); } catch (e) { console.warn(e); }
+  if (!pics.length) { box.innerHTML = '<span class="hint">Nessuna immagine staccabile (la grafica è un\'unica immagine): usa i ritagli qui sotto</span>'; return; }
+  for (const p of pics) {
+    const im = document.createElement('img'); im.className = 'thumb'; im.src = p.cv.toDataURL('image/png'); im.title = p.name + ' — clicca per aggiungere';
+    im.addEventListener('click', () => addDecoFromCanvas(p.cv, p.rect, p.name));
+    box.appendChild(im);
+  }
+}
+async function extractPics(buf, idx) {
+  const zip = await JSZip.loadAsync(buf); const deck = await readDeck(zip);
+  const s = deck.slides[Math.min(Math.max(idx, 1), deck.slides.length) - 1];
+  const readRels = async path => { const f = zip.file(relsPathOf(path)); return f ? Array.from(parseXml(await f.async('string')).getElementsByTagNameNS(NS_REL, 'Relationship')) : []; };
+  const slideDoc = parseXml(await zip.file(s.path).async('string')), srels = await readRels(s.path);
+  const levels = [{ doc: slideDoc, rels: srels, base: 'ppt/slides/' }];
+  const lay = srels.find(r => /\/slideLayout$/.test(r.getAttribute('Type')));
+  if (lay && slideDoc.documentElement.getAttribute('showMasterSp') !== '0') {
+    const lp = resolvePath('ppt/slides/', lay.getAttribute('Target'));
+    if (zip.file(lp)) {
+      const lr = await readRels(lp); levels.push({ doc: parseXml(await zip.file(lp).async('string')), rels: lr, base: 'ppt/slideLayouts/' });
+      const m = lr.find(r => /\/slideMaster$/.test(r.getAttribute('Type')));
+      if (m) { const mp = resolvePath('ppt/slideLayouts/', m.getAttribute('Target')); if (zip.file(mp)) levels.push({ doc: parseXml(await zip.file(mp).async('string')), rels: await readRels(mp), base: 'ppt/slideMasters/' }); }
+    }
+  }
+  const out = [];
+  for (const lv of levels) for (const pic of Array.from(lv.doc.getElementsByTagNameNS(NS_P, 'pic'))) {
+    let g = pic.parentNode, inGroup = false; while (g && g.localName !== 'spTree') { if (g.localName === 'grpSp') inGroup = true; g = g.parentNode; }
+    if (inGroup) continue;
+    const xf = pic.getElementsByTagNameNS(NS_A, 'xfrm')[0]; if (!xf) continue;
+    const off = firstKid(xf, NS_A, 'off'), ext = firstKid(xf, NS_A, 'ext'); if (!off || !ext) continue;
+    const rect = { x: off.getAttribute('x') / deck.cx * 100, y: off.getAttribute('y') / deck.cy * 100, w: ext.getAttribute('cx') / deck.cx * 100, h: ext.getAttribute('cy') / deck.cy * 100 };
+    if (rect.w * rect.h / 100 > 55 || rect.w < 1.5 || rect.h < 1.5) continue; // salta gli sfondi a tutta slide e i dettagli minuscoli
+    const b = pic.getElementsByTagNameNS(NS_A, 'blip')[0]; const rid = b && b.getAttributeNS(NS_R, 'embed'); if (!rid) continue;
+    const rel = lv.rels.find(r => r.getAttribute('Id') === rid); if (!rel) continue;
+    const mp = resolvePath(lv.base, rel.getAttribute('Target')); if (!zip.file(mp)) continue;
+    let bmp; try { bmp = await createImageBitmap(await zip.file(mp).async('blob')); } catch (e) { continue; }
+    const sr = pic.getElementsByTagNameNS(NS_A, 'srcRect')[0]; const f = n => sr ? (parseFloat(sr.getAttribute(n)) || 0) / 100000 : 0;
+    const sw = bmp.width * (1 - f('l') - f('r')), sh = bmp.height * (1 - f('t') - f('b')), k = Math.min(1, 700 / Math.max(sw, sh));
+    const cv = document.createElement('canvas'); cv.width = Math.max(2, Math.round(sw * k)); cv.height = Math.max(2, Math.round(sh * k));
+    cv.getContext('2d').drawImage(bmp, bmp.width * f('l'), bmp.height * f('t'), sw, sh, 0, 0, cv.width, cv.height);
+    const nm = pic.getElementsByTagNameNS(NS_P, 'cNvPr')[0];
+    out.push({ cv, rect, name: nm ? nm.getAttribute('name') : 'Immagine' });
+  }
+  return out;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[data-crop]').forEach(b => b.addEventListener('click', () => cropRect(presetRect(b.dataset.crop), b.textContent.trim())));
+  $('plainColor').addEventListener('input', () => { state.plainTouched = true; });
+  $('bgMode').addEventListener('change', () => { if ($('bgMode').value === 'plain') $('bnAuto').checked && refreshUi(); });
+  // ritaglio col mouse
+  const stage = $('stage'), box = $('cropBox'); let c = null, on = false;
+  $('cropMouse').addEventListener('click', () => { on = !on; stage.classList.toggle('crop', on); $('cropMouse').style.background = on ? '#5a4a12' : ''; if (on) log('Trascina un rettangolo sull\'anteprima per ritagliare quel pezzo.'); });
+  const pt = e => { const r = stage.getBoundingClientRect(); return { x: clamp((e.clientX - r.left) / r.width * 100, 0, 100), y: clamp((e.clientY - r.top) / r.height * 100, 0, 100) }; };
+  stage.addEventListener('pointerdown', e => { if (!on) return; c = { a: pt(e) }; box.style.display = 'block'; stage.setPointerCapture(e.pointerId); e.preventDefault(); });
+  stage.addEventListener('pointermove', e => {
+    if (!on || !c) return; const b = pt(e), a = c.a;
+    c.r = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+    Object.assign(box.style, { left: c.r.x + '%', top: c.r.y + '%', width: c.r.w + '%', height: c.r.h + '%' });
+  });
+  stage.addEventListener('pointerup', () => {
+    if (!on || !c) return; const r = c.r; c = null; box.style.display = 'none';
+    if (r && r.w > 2 && r.h > 2) { cropRect(r, 'Ritaglio'); on = false; stage.classList.remove('crop'); $('cropMouse').style.background = ''; }
+  });
+  renderDecos();
 });
 
 // per i test automatici

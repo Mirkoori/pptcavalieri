@@ -56,6 +56,14 @@ a{color:var(--acc)}
 details.adv{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
 details.adv summary{cursor:pointer;color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:1px}
 details.adv[open] summary{margin-bottom:8px}
+
+.deco{position:absolute;border:1px dashed rgba(77,163,255,.85);touch-action:none;cursor:move;z-index:1}
+.deco img{width:100%;height:100%;display:block;pointer-events:none}
+.deco .x{position:absolute;top:0;right:0;width:18px;height:18px;line-height:17px;text-align:center;background:var(--err);color:#fff;border-bottom-left-radius:6px;font-size:12px;cursor:pointer}
+#stage.crop{cursor:crosshair}#stage.crop *{pointer-events:none!important}
+#cropBox{position:absolute;border:2px dashed #ffd166;background:rgba(255,209,102,.2);display:none;z-index:6;pointer-events:none}
+.thumb{width:54px;height:40px;object-fit:contain;background:repeating-conic-gradient(#3a3f4a 0 25%,#2a2f39 0 50%) 0 0/12px 12px;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.thumb:hover{border-color:var(--acc)}
 </style>
 </head>
 <body>
@@ -192,6 +200,29 @@ details.adv[open] summary{margin-bottom:8px}
   </div>
 
   <div class="card">
+    <h2><span class="n">★</span>Abbellimenti dal template</h2>
+    <div class="hint" style="margin:0 0 8px">Prendi pezzi della grafica dell'evento (loghi, fasce, angoli) e mettili nei cavalieri dove vuoi. Si trascinano nell'anteprima.</div>
+    <label>Immagini trovate nel template (clicca per aggiungere)</label>
+    <div id="picStrip" class="pill" style="margin:4px 0 8px"><span class="hint">Carica un template per vederle</span></div>
+    <label>Ritaglia un pezzo della grafica</label>
+    <div class="pill" style="margin:4px 0 8px">
+      <button type="button" class="small" data-crop="top">Fascia in alto</button>
+      <button type="button" class="small" data-crop="bottom">Fascia in basso</button>
+      <button type="button" class="small" data-crop="tl">Angolo alto sx</button>
+      <button type="button" class="small" data-crop="tr">Angolo alto dx</button>
+      <button type="button" class="small" data-crop="bl">Angolo basso sx</button>
+      <button type="button" class="small" data-crop="br">Angolo basso dx</button>
+      <button type="button" class="small" id="cropMouse" style="border-color:#ffd166">✂ Ritaglia col mouse</button>
+    </div>
+    <div class="row c2">
+      <div><label for="bgMode">Sfondo dei cavalieri</label><select id="bgMode"><option value="tpl">Come il template</option><option value="plain">Tinta unita</option></select></div>
+      <div><label for="plainColor">Colore tinta unita</label><input type="color" id="plainColor" value="#0b1b3a"></div>
+    </div>
+    <div id="decoCount" class="hint">Nessun abbellimento aggiunto.</div>
+    <div class="hint">Consiglio: scegli "Tinta unita" e aggiungi solo i pezzi che vuoi ricordare dell'evento.</div>
+  </div>
+
+  <div class="card">
     <h2><span class="n">5</span>Transizione</h2>
     <div class="row c3">
       <div><label for="trType">Tipo</label>
@@ -249,7 +280,7 @@ details.adv[open] summary{margin-bottom:8px}
     <div id="stage">
       <div id="bnr" style="position:absolute;display:none;cursor:move;touch-action:none;z-index:2"><div class="hdl" id="bnrH"></div></div>
       <div id="bnrLine" style="position:absolute;display:none;pointer-events:none;z-index:2"></div>
-      <div id="ovl"><div id="pvName">Mario Rossi</div><div id="pvRole">Amministratore Delegato</div><div class="hdl" id="ovlH"></div></div>
+      <div id="decoLayer" style="position:absolute;inset:0;pointer-events:none"></div><div id="cropBox"></div><div id="ovl"><div id="pvName">Mario Rossi</div><div id="pvRole">Amministratore Delegato</div><div class="hdl" id="ovlH"></div></div>
       <div id="stageNote"></div>
     </div>
     <div class="hint">Trascina il testo (o il banner) dove vuoi. Lo sfondo reale del template si vede solo in PowerPoint: se il file contiene una miniatura la uso qui.</div>

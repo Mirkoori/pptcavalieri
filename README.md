@@ -15,3 +15,6 @@ Apri `index.html` (anche offline, tutto gira nel browser):
 Il font scelto deve essere installato sul PC che apre il file.
 
 Librerie incluse in `lib/` (JSZip, PptxGenJS, pdf.js): nessuna connessione necessaria.
+
+## Abbellimenti dal template
+Dal template si possono prelevare loghi, fasce e angoli (miniature cliccabili, ritagli predefiniti alto/basso/angoli o ritaglio col mouse) e metterli sui cavalieri: si trascinano e ridimensionano nell'anteprima. Con "Tinta unita" lo sfondo diventa del colore dominante del template. Gli abbellimenti sono salvati nei modelli.
