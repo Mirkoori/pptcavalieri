@@ -158,6 +158,32 @@ function textboxXml(id, label, o, xEmu, yEmu, wEmu, hEmu, paras) {
     `<p:txBody><a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" rtlCol="0" anchor="${o.anchor}"><a:noAutofit/></a:bodyPr><a:lstStyle/>${pXml}</p:txBody></p:sp>`;
 }
 
+/* ------------------------------------------------------------------ banner */
+function bannerRect(o) {
+  const h = o.bnH;
+  if (o.bnPreset === 'inset') return { x: 5, y: 100 - h - 6, w: 90, h };
+  if (o.bnPreset === 'top') return { x: 0, y: 0, w: 100, h };
+  return { x: 0, y: 100 - h, w: 100, h };
+}
+function rectXml(id, label, xE, yE, wE, hE, color, alpha) {
+  const a = alpha < 100 ? `<a:alpha val="${Math.round(alpha * 1000)}"/>` : '';
+  return `<p:sp xmlns:p="${NS_P}" xmlns:a="${NS_A}"><p:nvSpPr><p:cNvPr id="${id}" name="${esc(label)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>` +
+    `<p:spPr><a:xfrm><a:off x="${Math.round(xE)}" y="${Math.round(yE)}"/><a:ext cx="${Math.round(wE)}" cy="${Math.round(hE)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+    `<a:solidFill><a:srgbClr val="${color.replace('#', '').toUpperCase()}">${a}</a:srgbClr></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr></p:sp>`;
+}
+function addBanner(doc, o, W, H) {
+  const spTree = doc.getElementsByTagNameNS(NS_P, 'spTree')[0];
+  const r = bannerRect(o);
+  const x = W * r.x / 100, y = H * r.y / 100, w = W * r.w / 100, h = H * r.h / 100;
+  let id = maxId(doc) + 1;
+  spTree.appendChild(doc.importNode(parseXml(rectXml(id++, 'Banner', x, y, w, h, o.bnColor, o.bnOpacity)).documentElement, true));
+  if (o.bnLine) {
+    const lh = Math.max(H * 0.008, 25400);
+    const ly = o.bnPreset === 'top' ? y + h : y - lh;
+    spTree.appendChild(doc.importNode(parseXml(rectXml(id++, 'Banner linea', x, ly, w, lh, o.bnLineColor, 100)).documentElement, true));
+  }
+}
+
 /* ------------------------------------------------------------------ transizioni */
 function buildTransition(doc, o) {
   const tr = doc.createElementNS(NS_P, 'p:transition');
@@ -194,6 +220,7 @@ function applyTransition(doc, o) {
   const root = doc.documentElement;
   // elimina transizioni esistenti (anche dentro mc:AlternateContent)
   for (const t of Array.from(root.getElementsByTagNameNS(NS_P, 'transition'))) {
+    if (!root.contains(t)) continue; // già rimossa insieme al suo mc:AlternateContent
     let n = t;
     while (n.parentNode !== root) n = n.parentNode;
     root.removeChild(n);
@@ -226,6 +253,8 @@ function transformSlide(xml, person, o, slideW, slideH) {
       sp.parentNode.removeChild(sp);
     }
   }
+
+  if (o.bnOn) addBanner(doc, o, slideW, slideH);
 
   if (!o.forceNew) {
     // 1) segnaposto {{NOME}} / {{RUOLO}}
@@ -421,7 +450,7 @@ async function makeBaseTemplate(withPlaceholders) {
 /* ------------------------------------------------------------------ UI */
 function readOpts() {
   const n = (id, d) => { const v = parseFloat($(id).value); return isNaN(v) ? d : v; };
-  return {
+  const o = {
     slideIdx: Math.round(n('slideIdx', 1)),
     font: $('font').value.trim() || 'Arial',
     size: n('size', 54), roleRatio: n('roleRatio', 55),
@@ -431,8 +460,14 @@ function readOpts() {
     keepStyle: $('keepStyle').checked, forceNew: $('forceNew').checked,
     px: n('px', 6), py: n('py', 68), pw: n('pw', 88), ph: n('ph', 24),
     trType: $('trType').value, trDir: $('trDir').value, trSpd: $('trSpd').value, advSec: n('advSec', 0),
-    keepOthers: $('keepOthers').checked, stripText: $('stripText').checked, caseMode: $('caseMode').value
+    keepOthers: $('keepOthers').checked, stripText: $('stripText').checked,
+    bnOn: $('bnOn').checked, bnColor: $('bnColor').value, bnOpacity: n('bnOpacity', 90), bnPreset: $('bnPreset').value, bnH: n('bnH', 20), bnLine: $('bnLine').checked, bnLineColor: $('bnLineColor').value, caseMode: $('caseMode').value
   };
+  if (o.bnOn) { // il testo va dentro il banner
+    const r = bannerRect(o);
+    Object.assign(o, { forceNew: true, px: r.x + 3, pw: r.w - 6, py: r.y, ph: r.h, anchor: 'ctr' });
+  }
+  return o;
 }
 
 const DIR_TYPES = ['push', 'wipe', 'cover', 'pull', 'split', 'blinds', 'checker', 'randomBar', 'comb'];
@@ -467,6 +502,12 @@ function refreshUi() {
   if (state.thumbUrl && state.tplBuf) { stage.style.backgroundImage = `url(${state.thumbUrl})`; stage.style.backgroundColor = '#2a2f39'; }
   else stage.style.backgroundImage = state.bgData && !state.tplBuf ? `url(data:${state.bgData})` : 'none';
   stage.style.backgroundColor = state.tplBuf ? '#2a2f39' : $('bgColor').value;
+  const bn = $('bnr'), bl = $('bnrLine');
+  if (o.bnOn) {
+    const r = bannerRect(o);
+    Object.assign(bn.style, { display: 'block', left: r.x + '%', top: r.y + '%', width: r.w + '%', height: r.h + '%', background: o.bnColor, opacity: o.bnOpacity / 100 });
+    Object.assign(bl.style, { display: o.bnLine ? 'block' : 'none', left: r.x + '%', width: r.w + '%', height: '0.8%', background: o.bnLineColor, top: (o.bnPreset === 'top' ? r.y + r.h : r.y - 0.8) + '%' });
+  } else { bn.style.display = 'none'; bl.style.display = 'none'; }
   const sample = people[0] || { name: 'Mario Rossi', role: 'Amministratore Delegato' };
   const slideWpt = state.info ? state.info.cx / EMU_PT : (is43 ? 720 : 960);
   const k = stage.clientWidth / slideWpt;
@@ -492,8 +533,8 @@ function refreshUi() {
   save();
 }
 
-const SAVE_IDS = ['slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
-const SAVE_CHK = ['bold', 'italic', 'fit', 'keepStyle', 'forceNew', 'keepOthers', 'stripText'];
+const SAVE_IDS = ['slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnPreset', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
+const SAVE_CHK = ['bold', 'italic', 'fit', 'keepStyle', 'forceNew', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
 function save() {
   try {
     const d = {}; SAVE_IDS.forEach(i => d[i] = $(i).value); SAVE_CHK.forEach(i => d[i] = $(i).checked);
