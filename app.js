@@ -444,10 +444,16 @@ function transformSlide(xml, person, o, slideW, slideH) {
   const doc = parseXml(xml);
   const stats = { ph: 0, title: 0, box: 0 };
   const nameOpts = { font: o.font, size: o.size, bold: o.bold, italic: o.italic, color: o.color };
-  const roleOpts = { font: o.font, size: Math.round(o.size * o.roleRatio / 100), bold: false, italic: o.italic, color: o.roleColor };
+  const ratio = Math.min(o.roleRatio, 85) / 100; // il ruolo è sempre più piccolo del nome
+  const roleOpts = { font: o.font, size: Math.round(o.size * ratio), bold: false, italic: o.italic, color: o.roleColor };
 
   const nameSize = (box) => o.fit ? fitSize(person.name, o.font, o.size, o.bold, o.italic, box) : o.size;
-  const roleSize = (box) => o.fit && person.role ? fitSize(person.role, o.font, roleOpts.size, false, o.italic, box) : roleOpts.size;
+  const roleSize = (box, nameSz) => {
+    const base = Math.round((nameSz || o.size) * ratio);
+    return o.fit && person.role ? fitSize(person.role, o.font, base, false, o.italic, box) : base;
+  };
+  const tplSize = p => { const r = Array.from(p.getElementsByTagNameNS(NS_A, 'rPr')).find(x => x.getAttribute('sz')); return r ? +r.getAttribute('sz') / 100 : null; };
+  const setSize = (p, pt) => { const r = kids(p, NS_A, 'r')[0]; if (!r) return; let rp = firstKid(r, NS_A, 'rPr'); if (!rp) { rp = doc.createElementNS(NS_A, 'a:rPr'); r.insertBefore(rp, r.firstChild); } rp.setAttribute('sz', String(Math.round(pt * 100))); };
 
   if (o.stripText) {
     const keepTitle = !o.forceNew;
@@ -468,16 +474,23 @@ function transformSlide(xml, person, o, slideW, slideH) {
 
   if (!o.forceNew) {
     // 1) segnaposto {{NOME}} / {{RUOLO}}
+    const items = [];
     for (const p of Array.from(doc.getElementsByTagNameNS(NS_A, 'p'))) {
       const full = kids(p, NS_A, 'r').concat(kids(p, NS_A, 'fld')).map(r => (firstKid(r, NS_A, 't') || {}).textContent || '').join('');
       if (!PH_TEST.test(full)) continue;
-      const isRoleOnly = /^\s*\{\{\s*(RUOLO|ROLE)\s*\}\}\s*$/i.test(full);
+      items.push({ p, full, isRoleOnly: /^\s*\{\{\s*(RUOLO|ROLE)\s*\}\}\s*$/i.test(full) });
+    }
+    items.sort((x, y) => x.isRoleOnly - y.isRoleOnly); // prima i nomi, poi i ruoli
+    let phNameSz = null;
+    for (const { p, full, isRoleOnly } of items) {
       const out = full.replace(PH_ALL, (m, k) => /^(NOME|NAME)$/i.test(k) ? person.name : person.role);
       const w = shapeWidthPt(ancestorSp(p));
       let st = null;
+      if (!isRoleOnly && phNameSz === null) phNameSz = o.keepStyle ? tplSize(p) : null;
       if (!o.keepStyle) {
         st = Object.assign({}, isRoleOnly ? roleOpts : nameOpts);
-        st.size = isRoleOnly ? roleSize(w) : nameSize(w);
+        st.size = isRoleOnly ? roleSize(w, phNameSz) : nameSize(w);
+        if (!isRoleOnly && phNameSz === null) phNameSz = st.size;
       }
       setParagraphText(doc, p, out, st);
       stats.ph++;
@@ -495,18 +508,21 @@ function transformSlide(xml, person, o, slideW, slideH) {
       const paras = kids(tb, NS_A, 'p');
       const w = shapeWidthPt(title);
       paras.slice(1).forEach(p => tb.removeChild(p));
-      setParagraphText(doc, paras[0], person.name, o.keepStyle ? null : Object.assign({}, nameOpts, { size: nameSize(w) }));
+      const tplSz = o.keepStyle ? (tplSize(paras[0]) || o.size) : null;
+      const titleSz = o.keepStyle ? tplSz : nameSize(w);
+      setParagraphText(doc, paras[0], person.name, o.keepStyle ? null : Object.assign({}, nameOpts, { size: titleSz }));
       stats.title++;
       if (person.role) {
         if (sub) {
           const sb = sub.getElementsByTagNameNS(NS_P, 'txBody')[0];
           const sp2 = kids(sb, NS_A, 'p');
           sp2.slice(1).forEach(p => sb.removeChild(p));
-          setParagraphText(doc, sp2[0], person.role, o.keepStyle ? null : Object.assign({}, roleOpts, { size: roleSize(shapeWidthPt(sub)) }));
+          setParagraphText(doc, sp2[0], person.role, o.keepStyle ? null : Object.assign({}, roleOpts, { size: roleSize(shapeWidthPt(sub), titleSz) }));
         } else {
           const p2 = paras[0].cloneNode(true);
           tb.insertBefore(p2, null);
-          setParagraphText(doc, p2, person.role, o.keepStyle ? null : Object.assign({}, roleOpts, { size: roleSize(w) }));
+          setParagraphText(doc, p2, person.role, o.keepStyle ? null : Object.assign({}, roleOpts, { size: roleSize(w, titleSz) }));
+          if (o.keepStyle) setSize(p2, roleSize(w, titleSz)); // stile del template, ma più piccolo del nome
         }
       } else if (sub) {
         const sb = sub.getElementsByTagNameNS(NS_P, 'txBody')[0];
@@ -522,8 +538,9 @@ function transformSlide(xml, person, o, slideW, slideH) {
     const spTree = doc.getElementsByTagNameNS(NS_P, 'spTree')[0];
     const x = slideW * o.px / 100, y = slideH * o.py / 100, w = slideW * o.pw / 100, h = slideH * o.ph / 100;
     const wPt = w / EMU_PT;
-    const paras = [Object.assign({ text: person.name }, nameOpts, { size: nameSize(wPt) })];
-    if (person.role) paras.push(Object.assign({ text: person.role }, roleOpts, { size: roleSize(wPt) }));
+    const nSz = nameSize(wPt);
+    const paras = [Object.assign({ text: person.name }, nameOpts, { size: nSz })];
+    if (person.role) paras.push(Object.assign({ text: person.role }, roleOpts, { size: roleSize(wPt, nSz) }));
     const id = maxId(doc) + 1;
     const frag = parseXml(textboxXml(id, 'Relatore', o, x, y, w, h, paras)).documentElement;
     spTree.appendChild(doc.importNode(frag, true));
@@ -753,7 +770,7 @@ function refreshUi() {
     const n = $('pvName'), r = $('pvRole');
     n.textContent = sample.name; r.textContent = sample.role; r.style.display = sample.role ? '' : 'none';
     const nsz = o.fit ? fitSize(sample.name, o.font, o.size, o.bold, o.italic, stage.clientWidth / k * o.pw / 100) : o.size;
-    const rsz0 = o.size * o.roleRatio / 100;
+    const rsz0 = nsz * Math.min(o.roleRatio, 85) / 100;
     const rsz = o.fit && sample.role ? fitSize(sample.role, o.font, rsz0, false, o.italic, stage.clientWidth / k * o.pw / 100) : rsz0;
     Object.assign(n.style, { fontFamily: `"${o.font}", Arial, sans-serif`, fontSize: nsz * k + 'px', fontWeight: o.bold ? 700 : 400, fontStyle: o.italic ? 'italic' : 'normal', color: o.color, lineHeight: 1.2 });
     Object.assign(r.style, { fontFamily: `"${o.font}", Arial, sans-serif`, fontSize: rsz * k + 'px', fontWeight: 400, fontStyle: o.italic ? 'italic' : 'normal', color: o.roleColor, lineHeight: 1.2 });
