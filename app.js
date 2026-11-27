@@ -864,7 +864,7 @@ async function onTemplate(file) {
     state.tplBuf = null; state.info = null; $('tplFile').value = '';
     log('Impossibile leggere il template: ' + e.message, 'err');
   }
-  state.decos.forEach(d => URL.revokeObjectURL(d.url)); state.decos = []; renderDecos(); state.plainTouched = false;
+  state.decos.forEach(d => URL.revokeObjectURL(d.url)); state.decos = []; renderDecos(); state.plainTouched = false; state.bgTouched = false; $('bgMode').value = 'tpl';
   await updateBackdrop(); loadPicStrip();
 }
 
@@ -1095,7 +1095,9 @@ const canvasToBuf = cv => new Promise(res => cv.toBlob(async b => res(await b.ar
 async function addDecoFromCanvas(cv, rect, label) {
   const buf = await canvasToBuf(cv);
   const d = { id: 'd' + Date.now() + Math.random().toString(36).slice(2, 6), buf, url: URL.createObjectURL(new Blob([buf], { type: 'image/png' })), ar: cv.width / cv.height, x: rect.x, y: rect.y, w: rect.w, h: rect.h, label };
-  state.decos.push(d); renderDecos(); refreshUi();
+  state.decos.push(d);
+  if (!state.bgTouched && $('bgMode').value !== 'plain') { $('bgMode').value = 'plain'; $('place').value = 'free'; $('py').value = 38; await updateBackdrop(); }
+  renderDecos(); refreshUi();
 }
 async function cropRect(rect, label) {
   const cv = await hiBackdrop();
@@ -1197,7 +1199,7 @@ async function extractPics(buf, idx) {
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-crop]').forEach(b => b.addEventListener('click', () => cropRect(presetRect(b.dataset.crop), b.textContent.trim())));
   $('plainColor').addEventListener('input', () => { state.plainTouched = true; });
-  $('bgMode').addEventListener('change', () => { if ($('bgMode').value === 'plain') $('bnAuto').checked && refreshUi(); });
+  $('bgMode').addEventListener('change', () => { state.bgTouched = true; if ($('bgMode').value === 'plain') $('place').value = 'free'; refreshUi(); });
   // ritaglio col mouse
   const stage = $('stage'), box = $('cropBox'); let c = null, on = false;
   $('cropMouse').addEventListener('click', () => { on = !on; stage.classList.toggle('crop', on); $('cropMouse').style.background = on ? '#5a4a12' : ''; if (on) log('Trascina un rettangolo sull\'anteprima per ritagliare quel pezzo.'); });
