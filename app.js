@@ -175,11 +175,15 @@ function textboxXml(id, label, o, xEmu, yEmu, wEmu, hEmu, paras) {
 }
 
 /* ------------------------------------------------------------------ banner */
+const BN_PRESETS = {
+  full: o => ({ x: 0, y: 100 - o.h, w: 100 }),
+  inset: o => ({ x: 5, y: 100 - o.h - 6, w: 90 }),
+  top: o => ({ x: 0, y: 0, w: 100 }),
+  middle: o => ({ x: 0, y: (100 - o.h) / 2, w: 100 })
+};
 function bannerRect(o) {
-  const h = o.bnH;
-  if (o.bnPreset === 'inset') return { x: 5, y: 100 - h - 6, w: 90, h };
-  if (o.bnPreset === 'top') return { x: 0, y: 0, w: 100, h };
-  return { x: 0, y: 100 - h, w: 100, h };
+  const w = Math.min(Math.max(o.bnW, 5), 100), h = Math.min(Math.max(o.bnH, 3), 100);
+  return { x: Math.min(Math.max(o.bnX, 0), 100 - w), y: Math.min(Math.max(o.bnY, 0), 100 - h), w, h };
 }
 function rectXml(id, label, xE, yE, wE, hE, color, alpha) {
   const a = alpha < 100 ? `<a:alpha val="${Math.round(alpha * 1000)}"/>` : '';
@@ -195,7 +199,7 @@ function addBanner(doc, o, W, H) {
   spTree.appendChild(doc.importNode(parseXml(rectXml(id++, 'Banner', x, y, w, h, o.bnColor, o.bnOpacity)).documentElement, true));
   if (o.bnLine) {
     const lh = Math.max(H * 0.008, 25400);
-    const ly = o.bnPreset === 'top' ? y + h : y - lh;
+    const ly = o.bnLinePos === 'below' ? y + h : y - lh;
     spTree.appendChild(doc.importNode(parseXml(rectXml(id++, 'Banner linea', x, ly, w, lh, o.bnLineColor, 100)).documentElement, true));
   }
 }
@@ -477,7 +481,7 @@ function readOpts() {
     px: n('px', 6), py: n('py', 68), pw: n('pw', 88), ph: n('ph', 24),
     trType: $('trType').value, trDir: $('trDir').value, trSpd: $('trSpd').value, advSec: n('advSec', 0),
     twoLines: $('lines').value === '2', keepOthers: $('keepOthers').checked, stripText: $('stripText').checked,
-    bnOn: $('bnOn').checked, bnColor: $('bnColor').value, bnOpacity: n('bnOpacity', 90), bnPreset: $('bnPreset').value, bnH: n('bnH', 20), bnLine: $('bnLine').checked, bnLineColor: $('bnLineColor').value, caseMode: $('caseMode').value
+    bnOn: $('bnOn').checked, bnColor: $('bnColor').value, bnOpacity: n('bnOpacity', 90), bnX: n('bnX', 0), bnY: n('bnY', 78), bnW: n('bnW', 100), bnH: n('bnH', 20), bnLinePos: $('bnLinePos').value, bnLine: $('bnLine').checked, bnLineColor: $('bnLineColor').value, caseMode: $('caseMode').value
   };
   if (o.bnOn) { // il testo va dentro il banner
     const r = bannerRect(o);
@@ -524,7 +528,7 @@ function refreshUi() {
   if (o.bnOn) {
     const r = bannerRect(o);
     Object.assign(bn.style, { display: 'block', left: r.x + '%', top: r.y + '%', width: r.w + '%', height: r.h + '%', background: o.bnColor, opacity: o.bnOpacity / 100 });
-    Object.assign(bl.style, { display: o.bnLine ? 'block' : 'none', left: r.x + '%', width: r.w + '%', height: '0.8%', background: o.bnLineColor, top: (o.bnPreset === 'top' ? r.y + r.h : r.y - 0.8) + '%' });
+    Object.assign(bl.style, { display: o.bnLine ? 'block' : 'none', left: r.x + '%', width: r.w + '%', height: '0.8%', background: o.bnLineColor, top: (o.bnLinePos === 'below' ? r.y + r.h : r.y - 0.8) + '%' });
   } else { bn.style.display = 'none'; bl.style.display = 'none'; }
   const sample = people[0] || { name: 'Mario Rossi', role: 'Amministratore Delegato' };
   const slideWpt = state.info ? state.info.cx / EMU_PT : (rr === '43' ? 720 : rr === '916' ? 405 : 960);
@@ -552,7 +556,7 @@ function refreshUi() {
   save();
 }
 
-const SAVE_IDS = ['lines', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnPreset', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
+const SAVE_IDS = ['lines', 'slideIdx', 'bgColor', 'ratio', 'names', 'caseMode', 'font', 'size', 'roleRatio', 'color', 'roleColor', 'align', 'anchor', 'px', 'py', 'pw', 'ph', 'bnColor', 'bnOpacity', 'bnX', 'bnY', 'bnW', 'bnLinePos', 'bnH', 'bnLineColor', 'trType', 'trDir', 'trSpd', 'advSec', 'outName'];
 const SAVE_CHK = ['bold', 'italic', 'fit', 'keepStyle', 'forceNew', 'keepOthers', 'stripText', 'bnOn', 'bnLine'];
 function save() {
   try {
@@ -662,6 +666,33 @@ function applyProg(replace) {
   $('progBox').style.display = 'none'; $('progFile').value = '';
   refreshUi(); log(`${lines.length} nomi inseriti nella lista.`, 'ok');
 }
+/* ------------------------------------------------------------------ banner: preset e trascinamento */
+document.addEventListener('DOMContentLoaded', () => {
+  $('bnPreset').addEventListener('change', () => {
+    const f = BN_PRESETS[$('bnPreset').value]; if (!f) return;
+    const h = parseFloat($('bnH').value) || 20, r = f({ h });
+    $('bnX').value = r.x; $('bnY').value = Math.round(r.y * 10) / 10; $('bnW').value = r.w; refreshUi();
+  });
+  const bn = $('bnr'), stage = $('stage');
+  let drag = null;
+  bn.addEventListener('pointerdown', e => {
+    const o = readOpts(); const r = bannerRect(o);
+    drag = { x0: e.clientX, y0: e.clientY, bx: r.x, by: r.y, w: r.w, h: r.h };
+    bn.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  bn.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const sr = stage.getBoundingClientRect();
+    const nx = drag.bx + (e.clientX - drag.x0) / sr.width * 100, ny = drag.by + (e.clientY - drag.y0) / sr.height * 100;
+    $('bnX').value = Math.round(Math.min(Math.max(nx, 0), 100 - drag.w) * 10) / 10;
+    $('bnY').value = Math.round(Math.min(Math.max(ny, 0), 100 - drag.h) * 10) / 10;
+    $('bnPreset').value = 'custom'; refreshUi();
+  });
+  const end = () => { drag = null; };
+  bn.addEventListener('pointerup', end); bn.addEventListener('pointercancel', end);
+  ['bnX', 'bnY', 'bnW', 'bnH'].forEach(id => $(id).addEventListener('input', () => { $('bnPreset').value = 'custom'; }));
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   $('progFile').addEventListener('change', e => onProgram(e.target.files[0]));
   $('progClose').addEventListener('click', () => { $('progBox').style.display = 'none'; $('progFile').value = ''; });

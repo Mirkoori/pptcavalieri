@@ -42,6 +42,7 @@ button.primary:disabled{opacity:.5;cursor:wait}
 #stage{position:relative;width:100%;aspect-ratio:16/9;background:#2a2f39 center/cover no-repeat;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 #ovl{position:absolute;display:flex;flex-direction:column;overflow:hidden;border:1px dashed rgba(255,255,255,.35)}
 #ovl.off{display:none}
+#ovl{pointer-events:none;z-index:3}
 #ovl div{white-space:nowrap;overflow:hidden;text-overflow:clip}
 #stageNote{position:absolute;left:10px;bottom:8px;right:10px;font-size:12px;color:#fff;background:rgba(0,0,0,.55);padding:4px 8px;border-radius:6px;display:none}
 #log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--mut);white-space:pre-wrap;min-height:18px;margin-top:10px}
@@ -150,15 +151,22 @@ a{color:var(--acc)}
     <h2><span class="n">4</span>Banner</h2>
     <label class="chk"><input type="checkbox" id="bnOn"> Crea un banner sotto il nome (il testo va dentro il banner)</label>
     <div class="row c3">
-      <div><label for="bnPreset">Stile</label><select id="bnPreset"><option value="full">Barra a tutta larghezza in basso</option><option value="inset">Barra con margini in basso</option><option value="top">Barra in alto</option></select></div>
+      <div><label for="bnPreset">Posizione rapida</label><select id="bnPreset"><option value="full">In basso, tutta larghezza</option><option value="inset">In basso, con margini</option><option value="middle">Al centro</option><option value="top">In alto</option><option value="custom">Personalizzata</option></select></div>
       <div><label for="bnColor">Colore</label><input type="color" id="bnColor" value="#0b1b3a"></div>
       <div><label for="bnOpacity">Opacità %</label><input type="number" id="bnOpacity" min="10" max="100" value="90"></div>
     </div>
+    <div class="row c4">
+      <div><label for="bnX">X %</label><input type="number" id="bnX" min="0" max="100" step="0.5" value="0"></div>
+      <div><label for="bnY">Y %</label><input type="number" id="bnY" min="0" max="100" step="0.5" value="78"></div>
+      <div><label for="bnW">Largh. %</label><input type="number" id="bnW" min="5" max="100" step="0.5" value="100"></div>
+      <div><label for="bnH">Alt. %</label><input type="number" id="bnH" min="3" max="100" step="0.5" value="22"></div>
+    </div>
     <div class="row c3">
-      <div><label for="bnH">Altezza % slide</label><input type="number" id="bnH" min="5" max="60" value="20"></div>
       <div><label for="bnLineColor">Colore linea</label><input type="color" id="bnLineColor" value="#f5b942"></div>
+      <div><label for="bnLinePos">Linea</label><select id="bnLinePos"><option value="above">Sopra il banner</option><option value="below">Sotto il banner</option></select></div>
       <div style="align-self:end"><label class="chk"><input type="checkbox" id="bnLine" checked> Linea di accento</label></div>
     </div>
+    <div class="hint"><b>Trascina il banner nell'anteprima</b> per spostarlo, oppure usa X / Y / Largh. / Alt.</div>
     <div class="hint">Con il banner attivo ignoro segnaposto e titolo del template: il nome va sempre nel banner. Il banner sta sopra la grafica del template.</div>
   </div>
 
@@ -211,7 +219,7 @@ a{color:var(--acc)}
   <div class="card">
     <h2>Anteprima (indicativa)</h2>
     <div id="stage">
-      <div id="bnr" style="position:absolute;display:none"></div><div id="bnrLine" style="position:absolute;display:none"></div><div id="ovl"><div id="pvName">Mario Rossi</div><div id="pvRole">Amministratore Delegato</div></div>
+      <div id="bnr" style="position:absolute;display:none;cursor:move;touch-action:none;z-index:2"></div><div id="bnrLine" style="position:absolute;display:none;pointer-events:none;z-index:2"></div><div id="ovl"><div id="pvName">Mario Rossi</div><div id="pvRole">Amministratore Delegato</div></div>
       <div id="stageNote"></div>
     </div>
     <div class="hint">L'anteprima mostra posizione e stile del testo sul primo nome della lista. Lo sfondo reale del template si vede solo in PowerPoint: se il file contiene una miniatura la uso qui.</div>
