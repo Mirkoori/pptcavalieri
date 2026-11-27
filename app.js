@@ -206,30 +206,96 @@ async function loadBackdrop(buf, idx) {
   const deck = await readDeck(zip);
   const s = deck.slides[Math.min(Math.max(idx, 1), deck.slides.length) - 1];
   const aspect = deck.cx / deck.cy;
-  const xml = await zip.file(s.path).async('string');
-  const doc = parseXml(xml);
-  const rf = zip.file(relsPathOf(s.path));
-  const rels = rf ? Array.from(parseXml(await rf.async('string')).getElementsByTagNameNS(NS_REL, 'Relationship')) : [];
-  const mediaOf = rid => { const r = rels.find(x => x.getAttribute('Id') === rid); return r ? resolvePath('ppt/slides/', r.getAttribute('Target')) : null; };
-  const embedOf = el => { const b = el.getElementsByTagNameNS(NS_A, 'blip')[0]; return b ? b.getAttributeNS(NS_R, 'embed') : null; };
-  let mediaPath = null, solid = null;
-  const bg = doc.getElementsByTagNameNS(NS_P, 'bg')[0];
-  if (bg) {
-    const e = embedOf(bg); if (e) mediaPath = mediaOf(e);
-    else { const c = bg.getElementsByTagNameNS(NS_A, 'srgbClr')[0]; if (c) solid = '#' + c.getAttribute('val'); }
+  const W = 240, H = Math.max(40, Math.round(W / aspect));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const readRels = async path => { const f = zip.file(relsPathOf(path)); return f ? Array.from(parseXml(await f.async('string')).getElementsByTagNameNS(NS_REL, 'Relationship')) : []; };
+  const relOfType = (rels, t, base) => { const r = rels.find(x => new RegExp('/' + t + '$').test(x.getAttribute('Type'))); return r ? resolvePath(base, r.getAttribute('Target')) : null; };
+
+  // livelli: slide -> layout -> master
+  const L = [];
+  const slideDoc = parseXml(await zip.file(s.path).async('string')), slideRels = await readRels(s.path);
+  L.push({ doc: slideDoc, rels: slideRels, base: 'ppt/slides/' });
+  const layPath = relOfType(slideRels, 'slideLayout', 'ppt/slides/');
+  let masterPath = null;
+  if (layPath && zip.file(layPath)) {
+    const lr = await readRels(layPath);
+    L.push({ doc: parseXml(await zip.file(layPath).async('string')), rels: lr, base: 'ppt/slideLayouts/' });
+    masterPath = relOfType(lr, 'slideMaster', 'ppt/slideLayouts/');
   }
-  if (!mediaPath && !solid) { // immagine grande quasi a tutta slide
-    let best = 0;
-    for (const pic of Array.from(doc.getElementsByTagNameNS(NS_P, 'pic'))) {
-      const ext = pic.getElementsByTagNameNS(NS_A, 'ext')[0]; if (!ext) continue;
-      const area = ext.getAttribute('cx') * ext.getAttribute('cy') / (deck.cx * deck.cy);
-      const e = embedOf(pic); if (area >= 0.6 && area > best && e) { best = area; mediaPath = mediaOf(e); }
+  let themeColors = {};
+  if (masterPath && zip.file(masterPath)) {
+    const mr = await readRels(masterPath);
+    L.push({ doc: parseXml(await zip.file(masterPath).async('string')), rels: mr, base: 'ppt/slideMasters/' });
+    const th = relOfType(mr, 'theme', 'ppt/slideMasters/');
+    if (th && zip.file(th)) {
+      const td = parseXml(await zip.file(th).async('string'));
+      const cs = td.getElementsByTagNameNS(NS_A, 'clrScheme')[0];
+      if (cs) for (const c of Array.from(cs.childNodes).filter(n => n.nodeType === 1)) {
+        const v = c.firstElementChild; if (!v) continue;
+        themeColors[c.localName] = '#' + (v.getAttribute('val') && v.localName === 'srgbClr' ? v.getAttribute('val') : (v.getAttribute('lastClr') || '000000'));
+      }
     }
   }
-  try {
-    if (mediaPath && zip.file(mediaPath)) return { canvas: await canvasFromBlob(await zip.file(mediaPath).async('blob'), aspect) };
-  } catch (e) { /* formato non leggibile dal browser */ }
-  if (solid) return { solid };
+  const SCHEME = { bg1: 'lt1', tx1: 'dk1', bg2: 'lt2', tx2: 'dk2' };
+  const colorOf = el => {
+    if (!el) return null;
+    const c = el.getElementsByTagNameNS(NS_A, 'srgbClr')[0]; if (c) return '#' + c.getAttribute('val');
+    const sc = el.getElementsByTagNameNS(NS_A, 'schemeClr')[0];
+    if (sc) { const v = sc.getAttribute('val'); return themeColors[SCHEME[v] || v] || null; }
+    return null;
+  };
+  const embedOf = el => { const b = el.getElementsByTagNameNS(NS_A, 'blip')[0]; return b ? b.getAttributeNS(NS_R, 'embed') : null; };
+  const mediaOf = (lv, rid) => { const r = lv.rels.find(x => x.getAttribute('Id') === rid); return r ? resolvePath(lv.base, r.getAttribute('Target')) : null; };
+  const cache = {};
+  const bitmap = async path => {
+    if (!path || !zip.file(path)) return null;
+    if (!(path in cache)) { try { cache[path] = await createImageBitmap(await zip.file(path).async('blob')); } catch (e) { cache[path] = null; } }
+    return cache[path];
+  };
+
+  // 1) sfondo: il primo che esiste tra slide, layout, master
+  let solid = null, drawn = 0;
+  for (const lv of L) {
+    const bg = lv.doc.getElementsByTagNameNS(NS_P, 'bg')[0]; if (!bg) continue;
+    const pr = bg.getElementsByTagNameNS(NS_P, 'bgPr')[0] || bg;
+    const em = embedOf(pr);
+    if (em) { const bmp = await bitmap(mediaOf(lv, em)); if (bmp) { ctx.drawImage(bmp, 0, 0, W, H); drawn++; break; } continue; }
+    const grad = pr.getElementsByTagNameNS(NS_A, 'gradFill')[0];
+    if (grad) {
+      const stops = Array.from(grad.getElementsByTagNameNS(NS_A, 'gs')).map(g => ({ p: (+g.getAttribute('pos') || 0) / 100000, c: colorOf(g) })).filter(x => x.c);
+      if (stops.length) {
+        const lin = grad.getElementsByTagNameNS(NS_A, 'lin')[0], ang = lin ? (+lin.getAttribute('ang') || 0) / 60000 * Math.PI / 180 : Math.PI / 2;
+        const dx = Math.cos(ang) * W / 2, dy = Math.sin(ang) * H / 2;
+        const g2 = ctx.createLinearGradient(W / 2 - dx, H / 2 - dy, W / 2 + dx, H / 2 + dy);
+        stops.forEach(x => g2.addColorStop(Math.min(1, Math.max(0, x.p)), x.c));
+        ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H); solid = null; drawn++; break;
+      }
+    }
+    const c = colorOf(pr.getElementsByTagNameNS(NS_A, 'solidFill')[0] || pr.getElementsByTagNameNS(NS_P, 'bgRef')[0]);
+    if (c) { solid = c; ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); break; }
+  }
+  if (!drawn && !solid) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H); }
+
+  // 2) immagini: master -> layout -> slide (quelle dentro gruppi si saltano)
+  const showMaster = slideDoc.documentElement.getAttribute('showMasterSp') !== '0';
+  for (const lv of L.slice().reverse()) {
+    if (lv !== L[0] && !showMaster) continue;
+    for (const pic of Array.from(lv.doc.getElementsByTagNameNS(NS_P, 'pic'))) {
+      let g = pic.parentNode, inGroup = false;
+      while (g && g.localName !== 'spTree') { if (g.localName === 'grpSp') inGroup = true; g = g.parentNode; }
+      if (inGroup) continue;
+      const xf = pic.getElementsByTagNameNS(NS_A, 'xfrm')[0]; if (!xf) continue;
+      const off = firstKid(xf, NS_A, 'off'), ext = firstKid(xf, NS_A, 'ext'); if (!off || !ext) continue;
+      const em = embedOf(pic); const bmp = await bitmap(em ? mediaOf(lv, em) : null); if (!bmp) continue;
+      const sr = pic.getElementsByTagNameNS(NS_A, 'srcRect')[0];
+      const f = n => sr ? (parseFloat(sr.getAttribute(n)) || 0) / 100000 : 0;
+      ctx.drawImage(bmp, bmp.width * f('l'), bmp.height * f('t'), bmp.width * (1 - f('l') - f('r')), bmp.height * (1 - f('t') - f('b')),
+        off.getAttribute('x') * W / deck.cx, off.getAttribute('y') * H / deck.cy, ext.getAttribute('cx') * W / deck.cx, ext.getAttribute('cy') * H / deck.cy);
+      drawn++;
+    }
+  }
+  if (drawn || solid) return { canvas: cv, solid: drawn ? null : solid };
   const th = zip.file('docProps/thumbnail.jpeg');
   if (th && idx === 1) { try { return { canvas: await canvasFromBlob(await th.async('blob'), aspect) }; } catch (e) { /* ignora */ } }
   return null;
@@ -257,12 +323,21 @@ function palette(cv) {
   const accent = all.slice(0, 60).filter(b => b.n / tot > 0.003 && Math.max(...b.c) > 140 && satOf(b.c) > 0.3).sort((p, q) => satOf(q.c) * Math.sqrt(q.n) - satOf(p.c) * Math.sqrt(p.n))[0];
   return { colors: out, accent: accent ? accent.c : null };
 }
+const lumOf = c => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+function withText(c, line) { // banner = colore dello sfondo; testo scuro su sfondo chiaro, bianco su sfondo scuro
+  const light = lumOf(c) > 0.5;
+  return {
+    banner: rgb2hex(c), line,
+    text: light ? rgb2hex(darken(c, 0.22)) : '#ffffff',
+    role: light ? rgb2hex(darken(c, 0.4)) : rgb2hex(c.map(v => v + (255 - v) * 0.7))
+  };
+}
 function autoColors() {
   const bd = state.backdrop; if (!bd) return null;
-  if (bd.solid) return { banner: rgb2hex(bannerFrom(hex2rgb(bd.solid))), line: null };
+  if (bd.solid) return withText(hex2rgb(bd.solid), null);
   const r = bannerRect({ bnX: +$('bnX').value, bnY: +$('bnY').value, bnW: +$('bnW').value, bnH: +$('bnH').value });
   const dom = binsOf(bd.canvas, r)[0];
-  return { banner: rgb2hex(bannerFrom(dom ? dom.c : [11, 27, 58])), line: bd.accent ? rgb2hex(bd.accent) : null };
+  return withText(dom ? dom.c : [11, 27, 58], bd.accent ? rgb2hex(bd.accent) : null);
 }
 async function updateBackdrop() {
   state.backdrop = null;
@@ -608,10 +683,11 @@ function readOpts() {
 const DIR_TYPES = ['push', 'wipe', 'cover', 'pull', 'split', 'blinds', 'checker', 'randomBar', 'comb'];
 function applyAutoColors() {
   const on = $('bnAuto').checked && state.backdrop;
-  $('bnColor').disabled = !!on;
+  $('bnColor').disabled = !!on; $('color').disabled = $('roleColor').disabled = !!(on && $('bnOn').checked);
   if (!on) return;
   const c = autoColors(); if (!c) return;
-  $('bnColor').value = c.banner; $('bnLineColor').value = c.line || '#f5b942';
+  $('bnColor').value = c.banner; $('bnLineColor').value = c.line || (lumOf(hex2rgb(c.banner)) > 0.5 ? c.text : '#f5b942');
+  if ($('bnOn').checked) { $('color').value = c.text; $('roleColor').value = c.role; }
 }
 function refreshUi() {
   applyAutoColors();
